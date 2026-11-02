@@ -1,0 +1,43 @@
+{
+  "latitude_deg": 12.84,
+  "longitude_deg": 80.15,
+  "epoch": "JNow",
+  "serial_port": "",
+  "baud": 115200,
+  "simulate": false,
+  "stellarium_host": "127.0.0.1",
+  "stellarium_port": 10001,
+  "steps_per_deg_az": 113.22,
+  "steps_per_deg_alt": 113.22,
+  "sign_az": 1,
+  "sign_alt": 1,
+  "sign_focus": 1,
+  "backlash_az": 0,
+  "backlash_alt": 0,
+  "speed_az": 700,
+  "speed_alt": 700,
+  "speed_foc": 500,
+  "accel_az": 300,
+  "accel_alt": 300,
+  "accel_foc": 300,
+  "az_limit_deg": 200,
+  "alt_min_deg": 0,
+  "alt_max_deg": 85,
+  "sun_keepout_deg": 15,
+  "tracking_interval_s": 1.0,
+  "position_report_interval_s": 0.3,
+  "position_poll_interval_s": 0.3,
+  "jog_deg": {
+    "fine": 0.05,
+    "medium": 0.5,
+    "coarse": 3.0
+  },
+  "focus_steps": {
+    "fine": 20,
+    "coarse": 200
+  },
+  "park_az_deg": 0,
+  "park_alt_deg": 0,
+  "az_home_switch": false,
+  "log_csv": true
+}

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Logs & Runtime
+*.log
+pointing_log.csv
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
