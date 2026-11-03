@@ -6,6 +6,8 @@ AstroGoTo v2.0 Telescope Controller & Stellarium Bridge.
 
 import sys, os
 sys.path.insert(0, os.getcwd())
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+import tempfile
 import math
 import time
 import socket
@@ -45,7 +47,10 @@ def run_suite():
     # SECTION 1: CONFIGURATION & PERSISTENCE
     # =========================================================================
     print("\n--- SECTION 1: Configuration Management & Validation ---")
-    cfg = Config()
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_file:
+        tmp_file.write(b"{}")
+        tmp_cfg_path = tmp_file.name
+    cfg = Config(tmp_cfg_path)
     assert_test("Config Default Epoch", cfg["epoch"] == "J2000", f"(Epoch: {cfg['epoch']})")
     assert_test("Config Safe Az Speed", cfg["speed_az"] == 226, f"(speed_az: {cfg['speed_az']})")
     assert_test("Config Safe Alt Speed", cfg["speed_alt"] == 226, f"(speed_alt: {cfg['speed_alt']})")
@@ -56,7 +61,10 @@ def run_suite():
     assert_test("Config Validation Default Clean", len(errors) == 0, f"Errors: {errors}")
 
     # Bad config detection
-    bad_cfg = Config()
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_bad:
+        tmp_bad.write(b"{}")
+        tmp_bad_path = tmp_bad.name
+    bad_cfg = Config(tmp_bad_path)
     bad_cfg["latitude_deg"] = 999.0
     bad_cfg["epoch"] = "InvalidEpoch"
     bad_cfg["baud"] = -9600
@@ -304,7 +312,7 @@ def run_suite():
     assert_test("Jog Creates Logical Tracking Offsets", has_offsets, f"Offset steps: Az={core.az_off_steps}, Alt={core.alt_off_steps}")
 
     core.sync()
-    cleared_offsets = (core.alt_off_steps == 0 and core.alt_off_steps == 0)
+    cleared_offsets = (core.alt_off_steps == 0 and core.az_off_steps == 0)
     assert_test("Sync Resets Offsets to Target Zero", cleared_offsets)
 
     # Focus jogging
@@ -341,7 +349,8 @@ def run_suite():
     sock.sendall(goto_pkt[8:])
     time.sleep(0.1)
 
-    assert_test("Stellarium Fragmented GoTo Reassembled & Processed", core.current_target_is_j2000, f"Target: {core.last_goto_target_str}")
+    got_target = (core.current_target_radec is not None and abs(core.current_target_radec[0] - rigel_ra) < 0.1)
+    assert_test("Stellarium Fragmented GoTo Reassembled & Processed", got_target, f"Target: {core.last_goto_target_str}")
 
     # Read position report back from server
     sock.settimeout(2.0)
@@ -463,10 +472,23 @@ def run_suite():
     # Clean disconnect
     core.disconnect()
 
+    # Clean up temporary config files
+    for p in (tmp_cfg_path, tmp_bad_path):
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception:
+            pass
+
     print("\n" + "=" * 75)
     print(f"VERIFICATION COMPLETE: {passed_tests}/{total_tests} TESTS PASSED ({(passed_tests/total_tests)*100:.1f}%)")
     print("=" * 75)
     return passed_tests == total_tests
+
+
+def test_verification_suite():
+    assert run_suite()
+
 
 if __name__ == "__main__":
     success = run_suite()

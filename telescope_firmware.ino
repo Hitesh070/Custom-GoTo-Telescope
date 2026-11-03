@@ -52,8 +52,9 @@ const long  HOME_CLEAR_STEPS        = 2000L;  // max steps to back off an alread
 const uint8_t HOME_DEBOUNCE_COUNT   = 5;      // consecutive loop readings required for trigger
 
 // Watchdog and power management
-const unsigned long SERIAL_WATCHDOG_MS = 5000UL;  // stop motors if serial silent for 5s while moving
-const unsigned long IDLE_DISABLE_MS    = 20000UL; // disable az/alt coils after 20s idle (0 to disable)
+const unsigned long SERIAL_WATCHDOG_MS    = 5000UL;   // stop motors if serial silent for 5s while moving
+const unsigned long IDLE_DISABLE_AZ_MS   = 20000UL;  // disable Az coils after 20s idle (0 to disable)
+const unsigned long IDLE_DISABLE_ALT_MS  = 0UL;      // off by default for Alt to prevent optical tube sag on unbalanced OTA
 
 // Home switch pin definitions
 const uint8_t PIN_ALT_HOME = A1;
@@ -682,28 +683,30 @@ void loop() {
   }
 
   // 4. Azimuth and Altitude idle power management (Section 5.6)
-  if (IDLE_DISABLE_MS > 0) {
-    unsigned long now = millis();
+  unsigned long now = millis();
 
-    // Azimuth idle timeout
+  // Azimuth idle timeout
+  if (IDLE_DISABLE_AZ_MS > 0) {
     if (azStepper.distanceToGo() != 0 || homingAxis == HOME_AZ) {
       azIdleStartTime = 0;
     } else {
       if (azIdleStartTime == 0) {
         azIdleStartTime = now;
-      } else if (azOutputsEnabled && (now - azIdleStartTime >= IDLE_DISABLE_MS)) {
+      } else if (azOutputsEnabled && (now - azIdleStartTime >= IDLE_DISABLE_AZ_MS)) {
         azStepper.disableOutputs();
         azOutputsEnabled = false;
       }
     }
+  }
 
-    // Altitude idle timeout
+  // Altitude idle timeout (disabled by default to prevent tube sag on unbalanced mounts)
+  if (IDLE_DISABLE_ALT_MS > 0) {
     if (altStepper.distanceToGo() != 0 || homingAxis == HOME_ALT) {
       altIdleStartTime = 0;
     } else {
       if (altIdleStartTime == 0) {
         altIdleStartTime = now;
-      } else if (altOutputsEnabled && (now - altIdleStartTime >= IDLE_DISABLE_MS)) {
+      } else if (altOutputsEnabled && (now - altIdleStartTime >= IDLE_DISABLE_ALT_MS)) {
         altStepper.disableOutputs();
         altOutputsEnabled = false;
       }

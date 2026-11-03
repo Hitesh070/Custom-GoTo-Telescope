@@ -25,3 +25,6 @@ scratch/
 .idea/
 *.swp
 *.swo
+
+# User configuration (contains private observer coordinates)
+telescope_config.json

@@ -275,7 +275,6 @@ QLabel.title {
     font-size: 15px;
     font-weight: 700;
     color: #E2E8F0;
-    letter-spacing: 0.5px;
 }
 
 QLabel.subtitle {
@@ -287,8 +286,6 @@ QLabel.section-header {
     font-size: 12px;
     font-weight: 700;
     color: #94A3B8;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
     padding-bottom: 3px;
     border-bottom: 1px solid #2B313D;
 }
@@ -313,8 +310,6 @@ QLabel.hero-label {
     font-size: 11px;
     font-weight: 700;
     color: #8892A0;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
 }
 
 QLabel.hero-val {
@@ -322,7 +317,6 @@ QLabel.hero-val {
     font-size: 21px;
     font-weight: 800;
     color: #79B8FF;
-    letter-spacing: 0.5px;
 }
 
 QPushButton {
@@ -376,7 +370,6 @@ QPushButton.stop-btn {
     color: #FFFFFF;
     font-size: 12px;
     font-weight: 800;
-    letter-spacing: 0.8px;
 }
 
 QPushButton.stop-btn:hover {
@@ -711,9 +704,9 @@ class HelpGuideDialog(QDialog):
         <tr><td><b>ALT + / ALT -</b></td><td>Up / Down Arrow</td><td>Jogs the telescope in Altitude (elevation up/down).</td></tr>
         <tr><td><b>AZ - / AZ +</b></td><td>Left / Right Arrow</td><td>Jogs the telescope in Azimuth (pan left/right).</td></tr>
         <tr><td><b>STOP</b></td><td>Spacebar / Esc</td><td><b>Emergency Stop:</b> Immediately halts all motor motion, turns off sidereal tracking, and locks position.</td></tr>
-        <tr><td><b>Fine (0.05°)</b></td><td>--</td><td>Precision jogging rate (54 steps) for centering objects in high-magnification eyepieces.</td></tr>
-        <tr><td><b>Medium (0.50°)</b></td><td>--</td><td>Standard framing rate (543 steps) for finder scopes and wide fields.</td></tr>
-        <tr><td><b>Coarse (3.00°)</b></td><td>--</td><td>Fast repositioning rate (3,260 steps) for manual sky sweeping.</td></tr>
+        <tr><td><b>Fine (0.05°)</b></td><td>--</td><td>Precision jogging rate (6 steps) for centering objects in high-magnification eyepieces.</td></tr>
+        <tr><td><b>Medium (0.50°)</b></td><td>--</td><td>Standard framing rate (57 steps) for finder scopes and wide fields.</td></tr>
+        <tr><td><b>Coarse (3.00°)</b></td><td>--</td><td>Fast repositioning rate (340 steps) for manual sky sweeping.</td></tr>
         <tr><td><b>Sync Target</b></td><td>--</td><td><b>Star Alignment:</b> When you have centered an object in the eyepiece that was targeted by Stellarium, clicking Sync updates the mount's coordinate offset so pointing remains calibrated.</td></tr>
         <tr><td><b>Tracking: ON / OFF</b></td><td>--</td><td>Toggles the background sidereal tracking loop. When ON, the software automatically commands micro-steps every second to counteract Earth's rotation.</td></tr>
         <tr><td><b>Home Altitude</b></td><td>--</td><td>Commands the altitude axis to seek its physical microswitch (Pin A1) at 0° horizontal, resetting the altitude step register.</td></tr>
@@ -915,12 +908,12 @@ class SettingsDialog(QDialog):
         form_motors.addRow("Steps / Degree (Altitude):", self.spin_step_alt)
 
         self.spin_speed_az = QSpinBox()
-        self.spin_speed_az.setRange(50, 4000)
+        self.spin_speed_az.setRange(50, 1500)
         self.spin_speed_az.setValue(int(self.config.get("speed_az", 226)))
         form_motors.addRow("Max Speed Az (steps/s):", self.spin_speed_az)
 
         self.spin_speed_alt = QSpinBox()
-        self.spin_speed_alt.setRange(50, 4000)
+        self.spin_speed_alt.setRange(50, 1500)
         self.spin_speed_alt.setValue(int(self.config.get("speed_alt", 226)))
         form_motors.addRow("Max Speed Alt (steps/s):", self.spin_speed_alt)
 
@@ -1091,16 +1084,17 @@ class GoToDialog(QDialog):
 
         self.combo_presets = QComboBox()
         self.combo_presets.addItem("Custom Target Coordinates...", None)
-        presets_to_add = list(self.PRESETS)
+        presets_to_add = [(name, ra, dec, True) for name, ra, dec in self.PRESETS]
         if sun_radec and self.core:
             try:
                 t_now = self.core.get_time()
                 s_ra, s_dec = sun_radec(t_now)
-                presets_to_add.insert(0, ("Sun (Solar Filter Required)", round(s_ra, 4), round(s_dec, 4)))
+                presets_to_add.append(("Sun (Solar Filter Required)", round(s_ra, 4), round(s_dec, 4), False))
             except Exception:
                 pass
-        for name, ra, dec in presets_to_add:
-            self.combo_presets.addItem(f"{name} (RA {ra:.1f}°, Dec {dec:+.1f}°)", (ra, dec))
+        for item in presets_to_add:
+            name, ra, dec, is_j2000 = item
+            self.combo_presets.addItem(f"{name} (RA {ra:.1f}°, Dec {dec:+.1f}°)", (ra, dec, is_j2000))
         self.combo_presets.currentIndexChanged.connect(self._on_preset_selected)
         form.addRow("Target Catalog:", self.combo_presets)
 
@@ -1164,13 +1158,16 @@ class GoToDialog(QDialog):
     def _on_preset_selected(self, idx: int) -> None:
         data = self.combo_presets.currentData()
         if data:
-            ra, dec = data
+            ra, dec, is_j2000 = data
+            self.is_current_preset_j2000 = is_j2000
             self.spin_ra.blockSignals(True)
             self.spin_dec.blockSignals(True)
             self.spin_ra.setValue(ra)
             self.spin_dec.setValue(dec)
             self.spin_ra.blockSignals(False)
             self.spin_dec.blockSignals(False)
+        else:
+            self.is_current_preset_j2000 = (self.config.get("epoch", "J2000") == "J2000")
         self._recalc_preview()
 
     def _recalc_preview(self) -> None:
@@ -1182,8 +1179,14 @@ class GoToDialog(QDialog):
         lat = float(self.config.get("latitude_deg", 12.84))
         lon = float(self.config.get("longitude_deg", 80.15))
 
+        is_j2000 = getattr(self, "is_current_preset_j2000", (self.config.get("epoch", "J2000") == "J2000"))
+        if is_j2000 and precess_j2000_to_date:
+            ra_date, dec_date = precess_j2000_to_date(ra, dec, t)
+        else:
+            ra_date, dec_date = ra, dec
+
         use_refr = bool(self.config.get("apply_refraction", True))
-        alt, az = radec_to_altaz(ra, dec, lat, lon, t, apply_refraction=use_refr) if radec_to_altaz else (45.0, 180.0)
+        alt, az = radec_to_altaz(ra_date, dec_date, lat, lon, t, apply_refraction=use_refr) if radec_to_altaz else (45.0, 180.0)
         self.lbl_preview_altaz.setText(f"Target Alt / Az: {alt:+.1f}° / {az:.1f}° (apparent)")
 
         alt_min = float(self.config.get("alt_min_deg", 0.0))
@@ -1191,7 +1194,7 @@ class GoToDialog(QDialog):
         keepout = float(self.config.get("sun_keepout_deg", 15.0))
 
         s_ra, s_dec = sun_radec(t) if sun_radec else (0.0, 0.0)
-        sun_sep = separation_deg(ra, dec, s_ra, s_dec) if separation_deg else 90.0
+        sun_sep = separation_deg(ra_date, dec_date, s_ra, s_dec) if separation_deg else 90.0
 
         is_safe = True
         err_msg = ""
@@ -1221,21 +1224,27 @@ class GoToDialog(QDialog):
             self.lbl_preview_safety.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF6666;")
             self.btn_slew.setEnabled(False)
 
-        # Calculate slew distance and constant duration
+        # Calculate slew distance and coordinated duration (max of axes)
         cur_alt, cur_az = self.core.get_telescope_altaz()
         diff_az = abs(az - cur_az)
         if diff_az > 180.0:
             diff_az = 360.0 - diff_az
         diff_alt = abs(alt - cur_alt)
-        dist_deg = math.hypot(diff_az, diff_alt)
 
-        steps_deg = float(self.config.get("steps_per_deg_az", 113.22))
-        speed_steps = float(self.config.get("speed_az", 226))
-        speed_deg_s = speed_steps / steps_deg if steps_deg > 0 else 2.0
-        dur_s = dist_deg / speed_deg_s if speed_deg_s > 0 else 0.0
+        steps_deg_az = float(self.config.get("steps_per_deg_az", 113.22))
+        speed_steps_az = float(self.config.get("speed_az", 226))
+        speed_deg_s_az = speed_steps_az / steps_deg_az if steps_deg_az > 0 else 2.0
+
+        steps_deg_alt = float(self.config.get("steps_per_deg_alt", 113.22))
+        speed_steps_alt = float(self.config.get("speed_alt", 226))
+        speed_deg_s_alt = speed_steps_alt / steps_deg_alt if steps_deg_alt > 0 else 2.0
+
+        dur_az = diff_az / speed_deg_s_az if speed_deg_s_az > 0 else 0.0
+        dur_alt = diff_alt / speed_deg_s_alt if speed_deg_s_alt > 0 else 0.0
+        dur_s = max(dur_az, dur_alt)
 
         self.lbl_preview_duration.setText(
-            f"Distance: {dist_deg:.1f}° | Slew Duration: {dur_s:.1f}s (Constant {speed_deg_s:.1f}°/s)"
+            f"Distance: Az {diff_az:.1f}°, Alt {diff_alt:.1f}° | Slew Duration: {dur_s:.1f}s"
         )
 
     def _start_slew(self) -> None:
@@ -1265,7 +1274,8 @@ class GoToDialog(QDialog):
             else:
                 solar_ok = True
 
-        ok = self.core.on_goto_requested(ra, dec, solar_confirmed=solar_ok)
+        is_j2000 = getattr(self, "is_current_preset_j2000", (self.config.get("epoch", "J2000") == "J2000"))
+        ok = self.core.on_goto_requested(ra, dec, is_j2000=is_j2000, solar_confirmed=solar_ok)
         if ok:
             self.accept()
         else:
@@ -1452,13 +1462,13 @@ class AstroTelescopeWindow(QMainWindow):
         layout.setContentsMargins(14, 3, 14, 3)
 
         lbl_warn = QLabel("CAUTION: NEVER POINT TELESCOPE AT OR NEAR THE SUN WITHOUT A CERTIFIED SOLAR FILTER")
-        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #F2C2C2; letter-spacing: 0.5px;")
+        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #F2C2C2;")
         layout.addWidget(lbl_warn)
 
         layout.addStretch()
 
         self.chk_solar_filter = QCheckBox("Solar Filter Attached")
-        self.chk_solar_filter.setChecked(bool(self.config.get("solar_filter_installed", False)))
+        self.chk_solar_filter.setChecked(False)
         self.chk_solar_filter.setStyleSheet("font-size: 10px; font-weight: 700; color: #FFE082;")
         self.chk_solar_filter.setToolTip("Enables solar observation when a physical certified solar filter is securely attached")
         self.chk_solar_filter.toggled.connect(self._toggle_solar_filter)
@@ -1849,6 +1859,7 @@ class AstroTelescopeWindow(QMainWindow):
         self.console_text = QTextEdit()
         self.console_text.setReadOnly(True)
         self.console_text.setMaximumHeight(115)
+        self.console_text.document().setMaximumBlockCount(2000)
         layout.addWidget(self.console_text)
 
         return deck
@@ -1858,10 +1869,16 @@ class AstroTelescopeWindow(QMainWindow):
     # --------------------------------------------------------------------------
 
     def _setup_shortcuts(self) -> None:
-        QShortcut(QKeySequence(Qt.Key.Key_Up), self, lambda: self._jog("up"))
-        QShortcut(QKeySequence(Qt.Key.Key_Down), self, lambda: self._jog("down"))
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: self._jog("left"))
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: self._jog("right"))
+        def _safe_jog(direction: str):
+            focus_w = QApplication.focusWidget()
+            if isinstance(focus_w, (QComboBox, QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox)):
+                return
+            self._jog(direction)
+
+        QShortcut(QKeySequence(Qt.Key.Key_Up), self, lambda: _safe_jog("up"))
+        QShortcut(QKeySequence(Qt.Key.Key_Down), self, lambda: _safe_jog("down"))
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: _safe_jog("left"))
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: _safe_jog("right"))
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, self._emergency_stop)
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._emergency_stop)
 
@@ -1959,7 +1976,7 @@ class AstroTelescopeWindow(QMainWindow):
             b_lay.setSpacing(8)
 
             lbl_danger_title = QLabel("CRITICAL EYE SAFETY WARNING")
-            lbl_danger_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #FF6B6B; letter-spacing: 0.5px;")
+            lbl_danger_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #FF6B6B;")
             b_lay.addWidget(lbl_danger_title)
 
             lbl_danger_desc = QLabel(
@@ -1968,7 +1985,7 @@ class AstroTelescopeWindow(QMainWindow):
                 "or eyepiece causes INSTANT and PERMANENT BLINDNESS and irreparably damages camera sensors."
             )
             lbl_danger_desc.setWordWrap(True)
-            lbl_danger_desc.setStyleSheet("font-size: 12px; font-weight: 600; color: #FFFFFF; line-height: 1.4;")
+            lbl_danger_desc.setStyleSheet("font-size: 12px; font-weight: 600; color: #FFFFFF;")
             b_lay.addWidget(lbl_danger_desc)
             layout.addWidget(banner)
 
@@ -1978,7 +1995,7 @@ class AstroTelescopeWindow(QMainWindow):
                 "to the telescope aperture, and avoid looking directly along the optical line of sight."
             )
             lbl_instructions.setWordWrap(True)
-            lbl_instructions.setStyleSheet("font-size: 11px; color: #C8D1DC; line-height: 1.3;")
+            lbl_instructions.setStyleSheet("font-size: 11px; color: #C8D1DC;")
             layout.addWidget(lbl_instructions)
 
             lbl_question = QLabel("Do you have a certified solar filter installed and wish to proceed?")
@@ -2020,9 +2037,6 @@ class AstroTelescopeWindow(QMainWindow):
                     self.chk_solar_filter.blockSignals(False)
                 if self.core:
                     self.core.solar_filter_confirmed = True
-                self.config["solar_filter_installed"] = True
-                if hasattr(self.config, "save"):
-                    self.config.save()
                 self.log_message(
                     "WARNING",
                     f"Solar Slew Authorized: certified solar filter confirmed by observer (separation: {sun_sep:.1f}°)."
@@ -2038,7 +2052,7 @@ class AstroTelescopeWindow(QMainWindow):
             self._is_showing_solar_dialog = False
 
     def _toggle_solar_filter(self, checked: bool) -> None:
-        """Toggles solar filter status from the safety strip."""
+        """Toggles solar filter status from the safety strip (session-only)."""
         if checked:
             confirmed = self._prompt_solar_warning(0.0)
             if not confirmed:
@@ -2048,9 +2062,6 @@ class AstroTelescopeWindow(QMainWindow):
                 return
         if self.core:
             self.core.solar_filter_confirmed = checked
-        self.config["solar_filter_installed"] = checked
-        if hasattr(self.config, "save"):
-            self.config.save()
         state = "CONFIRMED (Solar Observation Permitted)" if checked else "REMOVED (Sun Keep-Out Active)"
         self.log_message("WARNING", f"Solar Filter Mode: {state}")
 
@@ -2123,6 +2134,10 @@ class AstroTelescopeWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             if self.core:
                 self.core.config = self.config
+                try:
+                    self.core.push_hardware_config()
+                except Exception as e:
+                    self.log_message("WARN", f"Could not push hardware config: {e}")
                 self.log_message("INFO", "Configuration updated and applied.")
 
     def _open_help(self) -> None:
@@ -2194,12 +2209,7 @@ class AstroTelescopeWindow(QMainWindow):
         if not self.core:
             return
 
-        # Automatic background location sync from Stellarium (checks port 8090 every 4s until synced)
-        if not getattr(self, "_has_auto_synced_location", False):
-            now_sec = time.time()
-            if now_sec - getattr(self, "_last_auto_sync_attempt", 0.0) >= 4.0:
-                self._last_auto_sync_attempt = now_sec
-                self._sync_location_from_stellarium(quiet=True)
+# Location sync is triggered on-demand via the 'Sync Location' button
 
         # 1. Drain event queue & link messages
         while not self.core.event_queue.empty():
@@ -2326,7 +2336,8 @@ class AstroTelescopeWindow(QMainWindow):
         if self.core.current_target_radec:
             ra_tgt_cfg, dec_tgt_cfg = self.core.current_target_radec
 
-            if self.config.get("epoch", "J2000") == "J2000":
+            is_tgt_j2000 = getattr(self.core, "current_target_is_j2000", (self.config.get("epoch", "J2000") == "J2000"))
+            if is_tgt_j2000:
                 ra_tgt_2000, dec_tgt_2000 = ra_tgt_cfg, dec_tgt_cfg
                 if precess_j2000_to_date:
                     ra_tgt_date, dec_tgt_date = precess_j2000_to_date(ra_tgt_2000, dec_tgt_2000, cur_t)

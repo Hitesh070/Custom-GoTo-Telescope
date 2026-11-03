@@ -194,8 +194,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 class Config:
     """Manages JSON configuration persistence, merging, and validation."""
 
-    def __init__(self, path: str = "telescope_config.json"):
-        self.path = path
+    @staticmethod
+    def get_default_path() -> str:
+        """Returns standard configuration file path, using %APPDATA%/AstroGoTo when frozen."""
+        if getattr(sys, 'frozen', False):
+            app_data = os.environ.get('APPDATA') or os.path.expanduser('~')
+            target_dir = os.path.join(app_data, 'AstroGoTo')
+            os.makedirs(target_dir, exist_ok=True)
+            return os.path.join(target_dir, 'telescope_config.json')
+        return "telescope_config.json"
+
+    def __init__(self, path: Optional[str] = None):
+        self.path = path or self.get_default_path()
         self.data: Dict[str, Any] = dict(DEFAULT_CONFIG)
         self.load()
 
@@ -334,6 +344,7 @@ class SerialLink(LinkBase):
         self._reader_thread: Optional[threading.Thread] = None
         self._poller_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._waiting_for_p: bool = False
 
     def open(self) -> bool:
         if not HAS_PYSERIAL:
@@ -428,8 +439,9 @@ class SerialLink(LinkBase):
                     )
                 except ValueError:
                     pass
-            # Also route to reply queue in case send("P") is waiting
-            self.reply_queue.put(line)
+            # Only route to reply queue when send("P") is explicitly waiting for it
+            if self._waiting_for_p:
+                self.reply_queue.put(line)
 
         elif line in ("ERR HOME ALT", "ERR HOME AZ", "WATCHDOG", "READY"):
             self.async_messages.put(line)
@@ -467,19 +479,25 @@ class SerialLink(LinkBase):
                 except queue.Empty:
                     break
 
-            try:
-                self.ser.write((cmd + "\n").encode('ascii'))
-            except Exception as e:
-                logging.error(f"Serial write error on send: {e}")
-                self.close()
-                return "TIMEOUT"
+            if cmd.strip() == "P":
+                self._waiting_for_p = True
 
-            # Wait up to 1.0 s for reply
             try:
-                reply = self.reply_queue.get(timeout=1.0)
-                return reply
-            except queue.Empty:
-                return "TIMEOUT"
+                try:
+                    self.ser.write((cmd + "\n").encode('ascii'))
+                except Exception as e:
+                    logging.error(f"Serial write error on send: {e}")
+                    self.close()
+                    return "TIMEOUT"
+
+                # Wait up to 1.0 s for reply
+                try:
+                    reply = self.reply_queue.get(timeout=1.0)
+                    return reply
+                except queue.Empty:
+                    return "TIMEOUT"
+            finally:
+                self._waiting_for_p = False
 
 
 class SimLink(LinkBase):
@@ -1017,7 +1035,7 @@ class StellariumHttpFollower:
                             self.core.target_name = name
                             self.core.target_type = obj_type
 
-                            is_satellite = ("satellite" in obj_type) or ("spacecraft" in obj_type) or ("iss" in name.lower())
+                            is_satellite = ("satellite" in obj_type) or ("spacecraft" in obj_type) or bool(re.search(r'\b(iss|zarya|tiangong|css|hst|hubble)\b', name, re.IGNORECASE))
                             has_altaz = ("altitude" in data and "azimuth" in data)
 
                             if is_satellite and has_altaz:
@@ -1079,8 +1097,17 @@ class PointingLogger:
         "target_alt_deg", "target_az_deg", "az_steps", "alt_steps", "note"
     ]
 
-    def __init__(self, filename: str = "pointing_log.csv"):
-        self.filename = filename
+    @staticmethod
+    def get_default_log_path() -> str:
+        if getattr(sys, 'frozen', False):
+            app_data = os.environ.get('APPDATA') or os.path.expanduser('~')
+            target_dir = os.path.join(app_data, 'AstroGoTo')
+            os.makedirs(target_dir, exist_ok=True)
+            return os.path.join(target_dir, 'pointing_log.csv')
+        return "pointing_log.csv"
+
+    def __init__(self, filename: Optional[str] = None):
+        self.filename = filename or self.get_default_log_path()
         self.lock = threading.Lock()
         self._ensure_header()
 
@@ -1178,6 +1205,11 @@ class BridgeCore:
     def on_event(self, event_type: str, message: str) -> None:
         self.event_queue.put((event_type, message))
 
+    @property
+    def is_connected(self) -> bool:
+        """Returns True if the hardware or simulation link is open and active."""
+        return bool(self.link and self.link.is_open)
+
     def connect(self, port: Optional[str] = None, simulate: Optional[bool] = None) -> bool:
         """Connects to hardware or simulator and sends initial configuration."""
         if simulate is not None:
@@ -1240,13 +1272,13 @@ class BridgeCore:
             logging.warning(f"A command reply: {r_a}")
 
         # 3. Soft Limits: L <azmin> <azmax> <altmin> <altmax>
-        az_lim_steps = angle_to_steps(cfg["az_limit_deg"], cfg["steps_per_deg_az"], 1)
-        alt_min_steps = angle_to_steps(cfg["alt_min_deg"], cfg["steps_per_deg_alt"], 1)
-        alt_max_steps = angle_to_steps(cfg["alt_max_deg"], cfg["steps_per_deg_alt"], 1)
+        az_lim_steps = angle_to_steps(cfg["az_limit_deg"], cfg["steps_per_deg_az"], cfg["sign_az"])
+        alt_lim_1 = angle_to_steps(cfg["alt_min_deg"], cfg["steps_per_deg_alt"], cfg["sign_alt"])
+        alt_lim_2 = angle_to_steps(cfg["alt_max_deg"], cfg["steps_per_deg_alt"], cfg["sign_alt"])
         az_min = -abs(az_lim_steps)
         az_max = abs(az_lim_steps)
-        alt_min = min(alt_min_steps, alt_max_steps)
-        alt_max = max(alt_min_steps, alt_max_steps)
+        alt_min = min(alt_lim_1, alt_lim_2)
+        alt_max = max(alt_lim_1, alt_lim_2)
 
         r_l = self.link.send(f"L {az_min} {az_max} {alt_min} {alt_max}")
         if r_l != "OK":
@@ -1261,7 +1293,8 @@ class BridgeCore:
         self.link.send("P")
 
     def on_goto_requested(self, ra: float, dec: float, is_j2000: Optional[bool] = None,
-                          predict_flight: bool = True, solar_confirmed: bool = False) -> bool:
+                          predict_flight: bool = True, solar_confirmed: bool = False,
+                          target_name: Optional[str] = None) -> bool:
         """Processes GoTo command from Stellarium or GUI with predictive time-of-flight intercept (Section 8.5)."""
         if not self.link or not self.link.is_open or not self.link.latest_telemetry.valid:
             msg = "GoTo ignored: telescope not connected"
@@ -1308,6 +1341,9 @@ class BridgeCore:
             speed_deg_alt = speed_steps_alt / steps_per_deg_alt if steps_per_deg_alt > 0 else 2.0
 
             # Contraction mapping fixed-point arrival time iteration (converges in 3 passes to < 0.1 arcsec)
+            is_sim = isinstance(self.link, SimLink)
+            ramp_az = 0.0 if is_sim else (speed_steps_az / max(1.0, float(self.config.get("accel_az", 100))))
+            ramp_alt = 0.0 if is_sim else (speed_steps_alt / max(1.0, float(self.config.get("accel_alt", 100))))
             tau = 0.0
             for _ in range(3):
                 t_eval = t0 + dt.timedelta(seconds=tau)
@@ -1317,8 +1353,8 @@ class BridgeCore:
                     r_eval, d_eval = ra, dec
                 a_eval, az_c_eval = radec_to_altaz(r_eval, d_eval, lat, lon, t_eval, apply_refraction=use_refr)
                 az_b_eval = choose_az_branch(az_c_eval, cur_az_angle, limit=az_limit)
-                t_az = abs(az_b_eval - cur_az_angle) / speed_deg_az if speed_deg_az > 0 else 0.0
-                t_alt = abs(a_eval - cur_alt) / speed_deg_alt if speed_deg_alt > 0 else 0.0
+                t_az = (abs(az_b_eval - cur_az_angle) / speed_deg_az + ramp_az) if (speed_deg_az > 0 and abs(az_b_eval - cur_az_angle) > 0.01) else 0.0
+                t_alt = (abs(a_eval - cur_alt) / speed_deg_alt + ramp_alt) if (speed_deg_alt > 0 and abs(a_eval - cur_alt) > 0.01) else 0.0
                 tau = max(t_az, t_alt)
 
             flight_time_s = tau
@@ -1342,6 +1378,7 @@ class BridgeCore:
                                 target_alt=alt_slew, target_az=az_slew_compass, note=msg)
             return False
 
+        # Endpoint separation from Sun
         sun_ra, sun_dec = sun_radec(t_target)
         if is_j2000:
             ra_check, dec_check = precess_j2000_to_date(ra, dec, t_target)
@@ -1349,15 +1386,40 @@ class BridgeCore:
             ra_check, dec_check = ra, dec
         sun_sep = separation_deg(ra_check, dec_check, sun_ra, sun_dec)
         sun_keepout = float(self.config["sun_keepout_deg"])
-        if sun_sep < sun_keepout:
+
+        # Path sampling: sample intermediate points along straight Alt/Az slew path
+        cur_az_steps = self.link.latest_telemetry.az_steps
+        cur_az_angle = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
+        az_limit = float(self.config["az_limit_deg"])
+        az_angle = choose_az_branch(az_slew_compass, cur_az_angle, limit=az_limit)
+
+        min_path_sep = sun_sep
+        cur_alt, _ = self.get_telescope_altaz()
+        for step_i in range(1, 10):
+            frac = step_i / 10.0
+            t_sample = t0 + dt.timedelta(seconds=flight_time_s * frac) if predict_flight else t0
+            sample_alt = cur_alt + frac * (alt_slew - cur_alt)
+            sample_az = cur_az_angle + frac * (az_angle - cur_az_angle)
+            s_ra_t, s_dec_t = sun_radec(t_sample)
+            s_alt_t, s_az_t = radec_to_altaz(s_ra_t, s_dec_t, lat, lon, t_sample, apply_refraction=use_refr)
+            d_az = (sample_az - s_az_t) * D2R
+            cos_sep = (math.sin(sample_alt * D2R) * math.sin(s_alt_t * D2R) +
+                       math.cos(sample_alt * D2R) * math.cos(s_alt_t * D2R) * math.cos(d_az))
+            sep_sample = math.degrees(math.acos(max(-1.0, min(1.0, cos_sep))))
+            if sep_sample < min_path_sep:
+                min_path_sep = sep_sample
+
+        effective_sep = min(sun_sep, min_path_sep)
+        if effective_sep < sun_keepout:
             confirmed = solar_confirmed or self.solar_filter_confirmed
             if not confirmed and self.solar_warning_callback:
-                confirmed = self.solar_warning_callback(sun_sep)
+                confirmed = self.solar_warning_callback(effective_sep)
                 if confirmed:
                     self.solar_filter_confirmed = True
 
             if not confirmed:
-                msg = f"GoTo refused: target is {sun_sep:.1f}° from Sun (solar filter required, keepout: {sun_keepout}°)"
+                path_note = "slew path sweeps within" if min_path_sep < sun_sep else "target is"
+                msg = f"GoTo refused: {path_note} {effective_sep:.1f}° from Sun (solar filter required, keepout: {sun_keepout}°)"
                 self.on_event("WARNING", msg)
                 logging.warning(msg)
                 if self.config["log_csv"]:
@@ -1365,16 +1427,10 @@ class BridgeCore:
                                     target_alt=alt_slew, target_az=az_slew_compass, note=msg)
                 return False
             else:
-                self.on_event("WARNING", f"Solar Slew Authorized: target is {sun_sep:.1f}° from Sun. Ensure certified solar filter is attached.")
+                self.on_event("WARNING", f"Solar Slew Authorized: target is {effective_sep:.1f}° from Sun. Ensure certified solar filter is attached.")
         else:
             if not self.config.get("solar_filter_installed", False):
                 self.solar_filter_confirmed = False
-
-        # Step 6: Azimuth branch selection
-        cur_az_steps = self.link.latest_telemetry.az_steps
-        cur_az_angle = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
-        az_limit = float(self.config["az_limit_deg"])
-        az_angle = choose_az_branch(az_slew_compass, cur_az_angle, limit=az_limit)
 
         # Step 7: Step conversion and command transmission
         target_az_steps = angle_to_steps(az_angle, self.config["steps_per_deg_az"], self.config["sign_az"])
@@ -1387,6 +1443,11 @@ class BridgeCore:
             logging.error(msg)
             return False
 
+        # Set hold-off and optimistic moving flag to prevent tracking thread from overwriting intercept
+        self.last_goto_time = time.time()
+        if self.link and getattr(self.link, 'latest_telemetry', None):
+            self.link.latest_telemetry.moving = 1
+
         # Step 8: Update active target and enable tracking
         self.current_target_radec = (ra, dec)
         self.current_target_is_j2000 = is_j2000
@@ -1396,7 +1457,9 @@ class BridgeCore:
         self.alt_off_steps = 0
         self.last_sent_steps = (target_az_steps, target_alt_steps)
         self.tracking_enabled = True
-        self.last_goto_target_str = f"RA {ra:.2f}°, Dec {dec:.2f}°"
+        self.last_goto_target_str = target_name or f"RA {ra:.2f}°, Dec {dec:.2f}°"
+        if target_name:
+            self.target_name = target_name
         self.tracking_initial_steps = (target_az_steps, target_alt_steps)
         self.tracking_pulses_count = 0
         self.tracking_total_steps_az = 0
@@ -1449,6 +1512,9 @@ class BridgeCore:
             return
 
         # Crucial: Never inject tracking delta nudges while an active Az/Alt GoTo slew is running
+        if isinstance(self.link, SerialLink) and (time.time() - getattr(self, "last_goto_time", 0.0)) < 0.6:
+            return
+
         if hasattr(self.link, "az_target") and hasattr(self.link, "az_pos"):
             if abs(self.link.az_target - self.link.az_pos) > 1.0 or abs(self.link.alt_target - self.link.alt_pos) > 1.0:
                 return
@@ -1586,9 +1652,11 @@ class BridgeCore:
         d_az_steps = angle_to_steps(d_az_deg, self.config["steps_per_deg_az"], self.config["sign_az"])
         d_alt_steps = angle_to_steps(d_alt_deg, self.config["steps_per_deg_alt"], self.config["sign_alt"])
 
-        az_lim_steps = angle_to_steps(self.config["az_limit_deg"], self.config["steps_per_deg_az"], 1)
-        alt_min_steps = angle_to_steps(self.config["alt_min_deg"], self.config["steps_per_deg_alt"], 1)
-        alt_max_steps = angle_to_steps(self.config["alt_max_deg"], self.config["steps_per_deg_alt"], 1)
+        az_lim_steps = angle_to_steps(self.config["az_limit_deg"], self.config["steps_per_deg_az"], self.config["sign_az"])
+        alt_lim_1 = angle_to_steps(self.config["alt_min_deg"], self.config["steps_per_deg_alt"], self.config["sign_alt"])
+        alt_lim_2 = angle_to_steps(self.config["alt_max_deg"], self.config["steps_per_deg_alt"], self.config["sign_alt"])
+        alt_min_steps = min(alt_lim_1, alt_lim_2)
+        alt_max_steps = max(alt_lim_1, alt_lim_2)
 
         if self.tracking_enabled:
             self.az_off_steps += d_az_steps
@@ -1626,7 +1694,8 @@ class BridgeCore:
         lon = float(self.config["longitude_deg"])
         ra_tgt, dec_tgt = self.current_target_radec
 
-        if self.config["epoch"] == "J2000":
+        is_j2000 = getattr(self, "current_target_is_j2000", (self.config.get("epoch", "J2000") == "J2000"))
+        if is_j2000:
             ra_date, dec_date = precess_j2000_to_date(ra_tgt, dec_tgt, t)
         else:
             ra_date, dec_date = ra_tgt, dec_tgt
@@ -1744,10 +1813,6 @@ class BridgeCore:
         lon = float(self.config["longitude_deg"])
         use_refr = bool(self.config.get("apply_refraction", True))
         ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t, apply_refraction=use_refr)
-
-        if self.config.get("epoch", "J2000") == "J2000":
-            return precess_date_to_j2000(ra_date, dec_date, t)
-        return ra_date, dec_date
 
         if self.config.get("epoch", "J2000") == "J2000":
             return precess_date_to_j2000(ra_date, dec_date, t)

@@ -17,7 +17,7 @@ def build():
         "--name=AstroGoTo",
         "--onefile",
         "--windowed",
-        "--add-data=telescope_config.json;.",
+        "--add-data=telescope_config.example.json;.",
         "--clean",
         "telescope_ui_qt.py"
     ]

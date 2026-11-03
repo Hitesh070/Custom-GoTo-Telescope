@@ -89,17 +89,13 @@ Version 2.0 introduces a standalone scientific GUI desktop interface (`telescope
 3. Connect the Arduino Uno over USB, select the COM port, and click **Upload**.
 
 ### 2. Running AstroGoTo v2.0
-Launch directly via the precompiled standalone executable:
-```bash
-dist/AstroGoTo.exe
-```
-Or run the Python application:
+Download the standalone executable from [GitHub Releases](https://github.com/Hitesh070/Custom-GoTo-Telescope-Mount/releases), or run from source:
 ```bash
 python telescope_ui_qt.py
 ```
 *(Or double-click `run_app.bat`)*.
 
-To run the headless bridge directly:
+To run the bridge in headless mode (console-only with Tkinter fallback via `--tk`):
 ```bash
 python telescope_bridge.py
 ```
