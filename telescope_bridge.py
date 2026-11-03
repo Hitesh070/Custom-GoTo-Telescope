@@ -1051,38 +1051,41 @@ class StellariumHttpFollower:
                             has_altaz = ("altitude" in data and "azimuth" in data)
 
                             if is_satellite and has_altaz:
-                                if self.require_explicit_goto and (self.authorized_target_name != name):
+                                if not getattr(self.core, "tracking_enabled", False):
+                                    # Tracking disabled by user (via Stop or Tracking button) - do not slew
+                                    self.last_target_name = name
+                                elif self.require_explicit_goto and (self.authorized_target_name != name):
                                     # User is browsing / inspecting this object in Stellarium, but has NOT commanded
                                     # a GoTo slew via Ctrl+1 yet. Do not auto-slew on click or double-click.
                                     self.last_target_name = name
                                 else:
                                     cur_alt = float(data["altitude"])
                                     cur_az = float(data["azimuth"])
-                                now = time.time()
+                                    now = time.time()
 
-                                v_az = 0.0
-                                v_alt = 0.0
-                                if self.prev_poll_time is not None and (0.05 < now - self.prev_poll_time < 3.0):
-                                    dt_s = now - self.prev_poll_time
-                                    d_az = cur_az - (self.prev_az if self.prev_az is not None else cur_az)
-                                    if d_az > 180.0:
-                                        d_az -= 360.0
-                                    elif d_az < -180.0:
-                                        d_az += 360.0
-                                    d_alt = cur_alt - (self.prev_alt if self.prev_alt is not None else cur_alt)
-                                    v_az = d_az / dt_s
-                                    v_alt = d_alt / dt_s
+                                    v_az = 0.0
+                                    v_alt = 0.0
+                                    if self.prev_poll_time is not None and (0.05 < now - self.prev_poll_time < 3.0):
+                                        dt_s = now - self.prev_poll_time
+                                        d_az = cur_az - (self.prev_az if self.prev_az is not None else cur_az)
+                                        if d_az > 180.0:
+                                            d_az -= 360.0
+                                        elif d_az < -180.0:
+                                            d_az += 360.0
+                                        d_alt = cur_alt - (self.prev_alt if self.prev_alt is not None else cur_alt)
+                                        v_az = d_az / dt_s
+                                        v_alt = d_alt / dt_s
 
-                                self.prev_poll_time = now
-                                self.prev_alt = cur_alt
-                                self.prev_az = cur_az
+                                    self.prev_poll_time = now
+                                    self.prev_alt = cur_alt
+                                    self.prev_az = cur_az
 
-                                # Predictive lead feedforward: aim where satellite will be when motors arrive
-                                tau_lead = 0.50
-                                pred_az = (cur_az + v_az * tau_lead) % 360.0
-                                pred_alt = max(0.0, min(85.0, cur_alt + v_alt * tau_lead))
+                                    # Predictive lead feedforward: aim where satellite will be when motors arrive
+                                    tau_lead = 0.50
+                                    pred_az = (cur_az + v_az * tau_lead) % 360.0
+                                    pred_alt = max(0.0, min(85.0, cur_alt + v_alt * tau_lead))
 
-                                self.core.track_satellite_altaz(pred_alt, pred_az, name=name)
+                                    self.core.track_satellite_altaz(pred_alt, pred_az, name=name)
                             else:
                                 # Celestial object: record name for display, but NEVER auto-slew on click.
                                 # Slew commands are commanded explicitly by the user via Ctrl+1 (port 10001) or GoTo dialog.
@@ -1597,6 +1600,8 @@ class BridgeCore:
 
     def track_satellite_altaz(self, alt: float, az_compass: float, name: str = "Satellite") -> bool:
         """Tracks rapidly moving satellites directly using predictive Alt/Az feedforward."""
+        if not getattr(self, "tracking_enabled", False):
+            return False
         if not self.link or not self.link.is_open or not self.link.latest_telemetry.valid:
             return False
 
@@ -1771,9 +1776,12 @@ class BridgeCore:
     def emergency_stop(self) -> None:
         """Stops all motion and turns tracking off."""
         self.tracking_enabled = False
+        self.target_type = ""
+        if hasattr(self, "follower") and self.follower:
+            self.follower.clear_authorized_target()
         if self.link and self.link.is_open:
             self.link.send("S")
-        self.on_event("WARNING", "EMERGENCY STOP executed")
+        self.on_event("WARNING", "EMERGENCY STOP executed - All tracking and motion halted")
         if self.config["log_csv"]:
             self.logger.log("STOP", note="Manual stop")
 
@@ -1794,18 +1802,25 @@ class BridgeCore:
             self.logger.log("PARK", az_steps=park_az_steps, alt_steps=park_alt_steps)
 
     def home_axis(self, axis: str) -> None:
-        """Commands background homing on limit switch."""
+        """Slews the requested axis (or both) to home position (0 deg / 0 steps), working similarly to park."""
         if not self.link or not self.link.is_open:
             return
         self.tracking_enabled = False
         self.is_homed = True
         if hasattr(self, "follower") and self.follower:
             self.follower.clear_authorized_target()
-        reply = self.link.send(f"Z {axis}")
+
+        cur_az = self.link.latest_telemetry.az_steps
+        cur_alt = self.link.latest_telemetry.alt_steps
+
+        target_az = 0 if axis.upper() in ("AZ", "BOTH") else cur_az
+        target_alt = 0 if axis.upper() in ("ALT", "BOTH") else cur_alt
+
+        reply = self.link.send(f"G {target_az} {target_alt}")
         if reply == "OK":
-            self.on_event("INFO", f"Homing {axis} started...")
+            self.on_event("INFO", f"Slewing {axis} to Home position (0 deg)...")
             if self.config["log_csv"]:
-                self.logger.log("HOME", note=f"Started homing {axis}")
+                self.logger.log("HOME", note=f"Slewed {axis} to home")
         else:
             self.on_event("ERROR", f"Homing {axis} rejected: {reply}")
 
@@ -1819,6 +1834,27 @@ class BridgeCore:
         reply = self.link.send(f"F {delta}")
         if reply != "OK":
             self.on_event("WARNING", f"Focus move rejected: {reply}")
+
+    def move_focus_steps(self, delta: int) -> bool:
+        """Moves focus motor by an explicit step delta."""
+        if not self.link or not self.link.is_open:
+            return False
+        effective_delta = delta * int(self.config.get("sign_focus", 1))
+        reply = self.link.send(f"F {effective_delta}")
+        if reply == "OK":
+            self.on_event("INFO", f"Focus moved by {delta:+d} steps")
+            return True
+        else:
+            self.on_event("WARNING", f"Focus move rejected: {reply}")
+            return False
+
+    def set_focus_target(self, target_step: int) -> bool:
+        """Slews focuser directly to target step position."""
+        if not self.link or not self.link.is_open or not self.link.latest_telemetry.valid:
+            return False
+        cur_foc = self.link.latest_telemetry.foc_steps
+        delta = target_step - cur_foc
+        return self.move_focus_steps(delta)
 
     def zero_position(self) -> None:
         """Sets current physical orientation as logical (0, 0)."""

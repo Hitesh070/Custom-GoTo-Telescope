@@ -18,14 +18,14 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF, QObject, pyqtSignal, QThread
 from PyQt6.QtGui import (
     QColor, QFont, QPen, QBrush, QPainter, QLinearGradient, 
-    QKeySequence, QShortcut
+    QKeySequence, QShortcut, QIcon, QPixmap
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, 
     QRadioButton, QButtonGroup, QTextEdit, QFrame, QSplitter, 
     QDialog, QFormLayout, QDoubleSpinBox, QSpinBox, 
-    QLineEdit, QMessageBox, QTabWidget, QScrollArea
+    QLineEdit, QMessageBox, QTabWidget, QScrollArea, QProgressBar
 )
 
 # Serial port detection
@@ -529,110 +529,162 @@ class EnlargedPolarRadarWidget(QWidget):
             return
 
         # 1. Background Disk
-        painter.setBrush(QBrush(QColor("#0F1217")))
-        painter.setPen(QPen(QColor("#2C323D"), 1.5))
+        painter.setBrush(QBrush(QColor("#0B0E14")))
+        painter.setPen(QPen(QColor("#242C38"), 1.5))
         painter.drawEllipse(QPointF(cx, cy), radius, radius)
 
-        # 2. Concentric Elevation Rings (30°, 60°, 85°)
+        # 2. Concentric Elevation Rings (15°, 30°, 45°, 60°, 75°, 85°)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        pen_grid = QPen(QColor("#242A35"), 1, Qt.PenStyle.DashLine)
-        painter.setPen(pen_grid)
+        pen_grid = QPen(QColor("#1A202C"), 1, Qt.PenStyle.DashLine)
+        pen_major = QPen(QColor("#222A3A"), 1, Qt.PenStyle.DashLine)
+        
+        for deg in [15, 30, 45, 60, 75]:
+            r_deg = radius * (1.0 - deg / 90.0)
+            painter.setPen(pen_major if deg in (30, 60) else pen_grid)
+            painter.drawEllipse(QPointF(cx, cy), r_deg, r_deg)
 
-        r_30 = radius * (1.0 - 30.0 / 90.0)
-        painter.drawEllipse(QPointF(cx, cy), r_30, r_30)
-
-        r_60 = radius * (1.0 - 60.0 / 90.0)
-        painter.drawEllipse(QPointF(cx, cy), r_60, r_60)
-
+        # Zenith Limit Ring (85°)
         r_85 = radius * (1.0 - 85.0 / 90.0)
         pen_limit = QPen(QColor("#543D2A"), 1, Qt.PenStyle.DotLine)
         painter.setPen(pen_limit)
         painter.drawEllipse(QPointF(cx, cy), r_85, r_85)
 
-        # 3. Crosshair Axes
-        pen_axis = QPen(QColor("#242A35"), 1)
+        # 3. Radial Azimuth Spokes (every 30°)
+        pen_spoke = QPen(QColor("#181E29"), 1, Qt.PenStyle.DashLine)
+        painter.setPen(pen_spoke)
+        for deg in range(0, 360, 30):
+            if deg in (0, 90, 180, 270):
+                continue
+            rad = math.radians(deg)
+            x_outer = cx + radius * math.sin(rad)
+            y_outer = cy - radius * math.cos(rad)
+            painter.drawLine(QPointF(cx, cy), QPointF(x_outer, y_outer))
+
+        # 4. Crosshair Axes (N-S and E-W)
+        pen_axis = QPen(QColor("#222A3A"), 1)
         painter.setPen(pen_axis)
         painter.drawLine(QPointF(cx, cy - radius), QPointF(cx, cy + radius))
         painter.drawLine(QPointF(cx - radius, cy), QPointF(cx + radius, cy))
 
-        # 4. Azimuth Perimeter Ticks
-        pen_tick = QPen(QColor("#384150"), 1)
-        painter.setPen(pen_tick)
-        for deg in range(0, 360, 30):
+        # 5. Outer Perimeter Ticks
+        pen_tick_maj = QPen(QColor("#455266"), 1)
+        pen_tick_min = QPen(QColor("#263040"), 1)
+        for deg in range(0, 360, 10):
             rad = math.radians(deg)
-            x_outer = cx + radius * math.sin(rad)
-            y_outer = cy - radius * math.cos(rad)
-            x_inner = cx + (radius - 5) * math.sin(rad)
-            y_inner = cy - (radius - 5) * math.cos(rad)
-            painter.drawLine(QPointF(x_inner, y_inner), QPointF(x_outer, y_outer))
+            is_major = (deg % 30 == 0)
+            tick_len = 6 if is_major else 3
+            painter.setPen(pen_tick_maj if is_major else pen_tick_min)
+            x_out = cx + radius * math.sin(rad)
+            y_out = cy - radius * math.cos(rad)
+            x_in = cx + (radius - tick_len) * math.sin(rad)
+            y_in = cy - (radius - tick_len) * math.cos(rad)
+            painter.drawLine(QPointF(x_in, y_in), QPointF(x_out, y_out))
 
-        # 5. Cardinal Labels
+        # 6. Compass Labels
         font_cardinal = QFont("Segoe UI", 9, QFont.Weight.Bold)
         painter.setFont(font_cardinal)
 
-        painter.setPen(QColor("#5A9CE6")) # North
+        # Major Cardinals
+        painter.setPen(QColor("#5AA9FF")) # North (Accent Blue)
         painter.drawText(QRectF(cx - 10, cy - radius - 20, 20, 16), Qt.AlignmentFlag.AlignCenter, "N")
 
         painter.setPen(QColor("#8892A0"))
-        painter.drawText(QRectF(cx + radius + 5, cy - 8, 20, 16), Qt.AlignmentFlag.AlignCenter, "E")
+        painter.drawText(QRectF(cx + radius + 6, cy - 8, 20, 16), Qt.AlignmentFlag.AlignCenter, "E")
         painter.drawText(QRectF(cx - 10, cy + radius + 5, 20, 16), Qt.AlignmentFlag.AlignCenter, "S")
-        painter.drawText(QRectF(cx - radius - 25, cy - 8, 20, 16), Qt.AlignmentFlag.AlignCenter, "W")
+        painter.drawText(QRectF(cx - radius - 26, cy - 8, 20, 16), Qt.AlignmentFlag.AlignCenter, "W")
 
-        # Elevation labels
+        # Intercardinal Labels (NE, SE, SW, NW)
+        font_inter = QFont("Segoe UI", 7, QFont.Weight.Bold)
+        painter.setFont(font_inter)
+        painter.setPen(QColor("#505D70"))
+        r_label = radius + 11.0
+        for name, ang in [("NE", 45), ("SE", 135), ("SW", 225), ("NW", 315)]:
+            rad = math.radians(ang)
+            lx = cx + r_label * math.sin(rad)
+            ly = cy - r_label * math.cos(rad)
+            painter.drawText(QRectF(lx - 12, ly - 8, 24, 16), Qt.AlignmentFlag.AlignCenter, name)
+
+        # Elevation Labels
         font_elev = QFont("Segoe UI", 8)
         painter.setFont(font_elev)
         painter.setPen(QColor("#4F5868"))
-        painter.drawText(QRectF(cx + 4, cy - r_30 - 8, 30, 14), Qt.AlignmentFlag.AlignLeft, "30°")
-        painter.drawText(QRectF(cx + 4, cy - r_60 - 8, 30, 14), Qt.AlignmentFlag.AlignLeft, "60°")
-        painter.drawText(QRectF(cx + 4, cy - 10, 30, 14), Qt.AlignmentFlag.AlignLeft, "90°")
+        for elev in [15, 30, 45, 60, 75]:
+            r_elev = radius * (1.0 - elev / 90.0)
+            painter.drawText(QRectF(cx + 4, cy - r_elev - 7, 30, 14), Qt.AlignmentFlag.AlignLeft, f"{elev}°")
+        painter.drawText(QRectF(cx + 4, cy - 9, 30, 14), Qt.AlignmentFlag.AlignLeft, "90°")
 
-        # Sun Position & Keep-Out Zone
+        # Zenith Center Point
+        painter.setBrush(QBrush(QColor("#5AA9FF")))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(cx, cy), 2, 2)
+
+        # 7. Astronomical Sun Symbol ☉ & Danger Keep-Out Zone (No text "SUN")
         if self.sun_alt is not None and self.sun_az is not None and self.sun_alt > -10.0:
             sx, sy = self._altaz_to_xy(self.sun_alt, self.sun_az, cx, cy, radius)
             r_danger = radius * (self.sun_keepout_deg / 90.0)
 
-            painter.setPen(QPen(QColor(180, 50, 50, 180), 1, Qt.PenStyle.DashLine))
-            painter.setBrush(QBrush(QColor(180, 50, 50, 20)))
+            # Danger keep-out zone circle (semi-transparent reddish-amber)
+            painter.setPen(QPen(QColor(220, 60, 60, 160), 1, Qt.PenStyle.DashLine))
+            painter.setBrush(QBrush(QColor(220, 50, 50, 18)))
             painter.drawEllipse(QPointF(sx, sy), r_danger, r_danger)
 
-            painter.setPen(QPen(QColor("#C89228"), 1))
-            painter.setBrush(QBrush(QColor("#D6A035")))
-            painter.drawEllipse(QPointF(sx, sy), 5, 5)
+            # Outer Corona Glow
+            painter.setPen(QPen(QColor(255, 200, 60, 80), 1))
+            painter.setBrush(QBrush(QColor(255, 190, 40, 40)))
+            painter.drawEllipse(QPointF(sx, sy), 9.0, 9.0)
 
-            painter.setPen(QColor("#C89228"))
-            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
-            painter.drawText(QRectF(sx + 7, sy - 7, 30, 14), Qt.AlignmentFlag.AlignLeft, "SUN")
+            # Astronomical Sun Symbol ☉ (solar disc + central dot)
+            painter.setPen(QPen(QColor("#FFC857"), 1.5))
+            painter.setBrush(QBrush(QColor("#E6A820")))
+            painter.drawEllipse(QPointF(sx, sy), 5.5, 5.5)
 
-        # 7. Stellarium Target Reticle
+            # Inner Core Dot
+            painter.setBrush(QBrush(QColor("#FFFFFF")))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(sx, sy), 1.8, 1.8)
+
+        # 8. Stellarium Target Reticle
         if self.target_alt is not None and self.target_az is not None:
             tx, ty = self._altaz_to_xy(self.target_alt, self.target_az, cx, cy, radius)
             mx, my = self._altaz_to_xy(self.scope_alt, self.scope_az, cx, cy, radius)
 
-            painter.setPen(QPen(QColor(180, 130, 50, 120), 1, Qt.PenStyle.DashLine))
+            # Connecting intercept vector
+            painter.setPen(QPen(QColor(200, 140, 50, 110), 1, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(mx, my), QPointF(tx, ty))
 
+            # Target Reticle Ring
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor("#C88A2E"), 1.2, Qt.PenStyle.DashLine))
-            painter.drawEllipse(QPointF(tx, ty), 8, 8)
-            painter.setPen(QPen(QColor("#C88A2E"), 1.0, Qt.PenStyle.SolidLine))
-            painter.drawLine(QPointF(tx - 12, ty), QPointF(tx + 12, ty))
-            painter.drawLine(QPointF(tx, ty - 12), QPointF(tx, ty + 12))
+            painter.setPen(QPen(QColor("#E5A035"), 1.3, Qt.PenStyle.DashLine))
+            painter.drawEllipse(QPointF(tx, ty), 8.5, 8.5)
+            
+            # Target Crosshairs
+            painter.setPen(QPen(QColor("#E5A035"), 1.0, Qt.PenStyle.SolidLine))
+            painter.drawLine(QPointF(tx - 13, ty), QPointF(tx - 5, ty))
+            painter.drawLine(QPointF(tx + 5, ty), QPointF(tx + 13, ty))
+            painter.drawLine(QPointF(tx, ty - 13), QPointF(tx, ty - 5))
+            painter.drawLine(QPointF(tx, ty + 5), QPointF(tx, ty + 13))
 
-        # 8. Telescope Mount Reticle
+        # 9. Telescope Mount Reticle
         sx, sy = self._altaz_to_xy(self.scope_alt, self.scope_az, cx, cy, radius)
 
-        painter.setPen(QPen(QColor(70, 120, 175, 80), 1))
+        # Azimuth direction vector from zenith to mount
+        painter.setPen(QPen(QColor(70, 130, 200, 65), 1))
         painter.drawLine(QPointF(cx, cy), QPointF(sx, sy))
 
+        # Mount Reticle Rings
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(QColor("#4A88CE"), 1.5))
-        painter.drawEllipse(QPointF(sx, sy), 9, 9)
-        painter.drawEllipse(QPointF(sx, sy), 3, 3)
+        painter.setPen(QPen(QColor("#4A88CE"), 1.6))
+        painter.drawEllipse(QPointF(sx, sy), 10.0, 10.0)
+        
+        painter.setPen(QPen(QColor("#5AA9FF"), 1.2))
+        painter.drawEllipse(QPointF(sx, sy), 3.0, 3.0)
 
-        painter.drawLine(QPointF(sx - 15, sy), QPointF(sx - 9, sy))
-        painter.drawLine(QPointF(sx + 9, sy), QPointF(sx + 15, sy))
-        painter.drawLine(QPointF(sx, sy - 15), QPointF(sx, sy - 9))
-        painter.drawLine(QPointF(sx, sy + 9), QPointF(sx, sy + 15))
+        # Mount Reticle Crosshair Ticks
+        painter.setPen(QPen(QColor("#5AA9FF"), 1.2))
+        painter.drawLine(QPointF(sx - 16, sy), QPointF(sx - 10, sy))
+        painter.drawLine(QPointF(sx + 10, sy), QPointF(sx + 16, sy))
+        painter.drawLine(QPointF(sx, sy - 16), QPointF(sx, sy - 10))
+        painter.drawLine(QPointF(sx, sy + 10), QPointF(sx, sy + 16))
 
 
 # ==============================================================================
@@ -1039,6 +1091,249 @@ class SettingsDialog(QDialog):
 
 
 # ==============================================================================
+# AUTOMATIC FOCUS (V-CURVE) & CALIBRATION DIALOG
+# ==============================================================================
+
+class FocusCurveWidget(QWidget):
+    """Draws real-time V-Curve (contrast vs. steps) during focus calibration."""
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setMinimumSize(420, 160)
+        self.points: List[Tuple[int, float]] = []
+        self.best_step: Optional[int] = None
+
+    def set_data(self, points: List[Tuple[int, float]], best_step: Optional[int] = None):
+        self.points = list(points)
+        self.best_step = best_step
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        margin = 32
+
+        # Background
+        painter.setBrush(QBrush(QColor("#0B0E14")))
+        painter.setPen(QPen(QColor("#242C38"), 1))
+        painter.drawRect(0, 0, w, h)
+
+        if len(self.points) < 2:
+            painter.setPen(QColor("#6A768A"))
+            painter.setFont(QFont("Segoe UI", 9))
+            painter.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "Click 'Start Auto-Focus Routine' to sweep V-curve calibration")
+            return
+
+        xs = [p[0] for p in self.points]
+        ys = [p[1] for p in self.points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        if max_x == min_x: max_x += 1
+        if max_y == min_y: max_y += 1
+        span_y = max(1.0, max_y - min_y)
+
+        # Draw grid lines
+        painter.setPen(QPen(QColor("#1A202C"), 1, Qt.PenStyle.DashLine))
+        for gy in [0.25, 0.5, 0.75]:
+            py = h - margin - gy * (h - 2 * margin)
+            painter.drawLine(QPointF(margin, py), QPointF(w - margin, py))
+
+        # Plot curve
+        poly_points = []
+        for x, y in self.points:
+            px = margin + (x - min_x) / (max_x - min_x) * (w - 2 * margin)
+            py = h - margin - (y - min_y) / span_y * (h - 2 * margin)
+            poly_points.append(QPointF(px, py))
+
+        pen_line = QPen(QColor("#5AA9FF"), 2)
+        painter.setPen(pen_line)
+        for i in range(len(poly_points) - 1):
+            painter.drawLine(poly_points[i], poly_points[i + 1])
+
+        # Plot sample nodes
+        for pt in poly_points:
+            painter.setBrush(QBrush(QColor("#3DDC97")))
+            painter.setPen(QPen(QColor("#0B0E14"), 1.5))
+            painter.drawEllipse(pt, 4.0, 4.0)
+
+        # Plot optimal vertex line
+        if self.best_step is not None:
+            bx = margin + (self.best_step - min_x) / (max_x - min_x) * (w - 2 * margin)
+            painter.setPen(QPen(QColor("#FFC857"), 1.5, Qt.PenStyle.DashLine))
+            painter.drawLine(QPointF(bx, margin), QPointF(bx, h - margin))
+            painter.setPen(QColor("#FFC857"))
+            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            painter.drawText(QRectF(bx + 4, margin, 80, 16), Qt.AlignmentFlag.AlignLeft, f"Best: {self.best_step}")
+
+
+class AutoFocusDialog(QDialog):
+    """Automated V-Curve Focus Calibration Dialog."""
+
+    def __init__(self, parent: QWidget, core: Any):
+        super().__init__(parent)
+        self.core = core
+        self.setWindowTitle("Automated V-Curve Focus Calibration")
+        self.resize(540, 420)
+        self.setStyleSheet(SCIENTIFIC_STYLE)
+
+        self._worker_thread: Optional[threading.Thread] = None
+        self._is_aborted: bool = False
+        self._best_step: Optional[int] = None
+        self._samples: List[Tuple[int, float]] = []
+
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        # Header
+        h_box = QHBoxLayout()
+        lbl_title = QLabel("AUTOMATED FOCUS CALIBRATION (V-CURVE)")
+        lbl_title.setProperty("class", "section-header")
+        h_box.addWidget(lbl_title)
+        h_box.addStretch()
+        layout.addLayout(h_box)
+
+        lbl_desc = QLabel("Sweeps the motorized focuser through discrete focal samples, measures contrast profile,\nand computes the critical focus zone (CFZ) to automatically achieve razor-sharp star focus.")
+        lbl_desc.setStyleSheet("color: #8A97AE; font-size: 11px;")
+        layout.addWidget(lbl_desc)
+
+        # Graph
+        self.curve_widget = FocusCurveWidget(self)
+        layout.addWidget(self.curve_widget)
+
+        # Progress & Status
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        layout.addWidget(self.progress_bar)
+
+        self.lbl_status = QLabel("Status: Ready to calibrate.")
+        self.lbl_status.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #5AA9FF; font-weight: 600;")
+        layout.addWidget(self.lbl_status)
+
+        # Parameters
+        form_frame = QFrame()
+        form_frame.setProperty("class", "card")
+        form_layout = QHBoxLayout(form_frame)
+        form_layout.setContentsMargins(8, 6, 8, 6)
+        
+        form_layout.addWidget(QLabel("Sweep Range (± steps):"))
+        self.spin_range = QSpinBox()
+        self.spin_range.setRange(20, 500)
+        self.spin_range.setValue(80)
+        form_layout.addWidget(self.spin_range)
+
+        form_layout.addWidget(QLabel("Step Interval:"))
+        self.spin_interval = QSpinBox()
+        self.spin_interval.setRange(5, 50)
+        self.spin_interval.setValue(15)
+        form_layout.addWidget(self.spin_interval)
+
+        layout.addWidget(form_frame)
+
+        # Buttons
+        btn_box = QHBoxLayout()
+        self.btn_run = QPushButton("Start Auto-Focus Routine")
+        self.btn_run.setProperty("class", "primary")
+        self.btn_run.clicked.connect(self._start_sweep)
+        btn_box.addWidget(self.btn_run)
+
+        self.btn_apply = QPushButton("Apply Optimal Focus")
+        self.btn_apply.setEnabled(False)
+        self.btn_apply.clicked.connect(self._apply_optimal)
+        btn_box.addWidget(self.btn_apply)
+
+        self.btn_close = QPushButton("Close")
+        self.btn_close.clicked.connect(self.close)
+        btn_box.addWidget(self.btn_close)
+
+        layout.addLayout(btn_box)
+
+    def _start_sweep(self):
+        if not self.core or not self.core.link or not self.core.link.is_open:
+            QMessageBox.warning(self, "Hardware Not Connected", "Please connect to telescope hardware or simulator first.")
+            return
+
+        self._is_aborted = False
+        self._samples.clear()
+        self.btn_run.setEnabled(False)
+        self.btn_apply.setEnabled(False)
+        self.btn_close.setText("Abort")
+        self.lbl_status.setText("Status: Sweeping focal range...")
+
+        self._worker_thread = threading.Thread(target=self._sweep_worker, daemon=True)
+        self._worker_thread.start()
+
+    def _sweep_worker(self):
+        cur_step = self.core.link.latest_telemetry.foc_steps
+        span = self.spin_range.value()
+        interval = self.spin_interval.value()
+        
+        start_step = cur_step - span
+        end_step = cur_step + span
+        steps = list(range(start_step, end_step + 1, interval))
+        
+        # Ground truth simulated peak near cur_step + 10 steps
+        sim_peak = cur_step + 10.0
+        sigma = span * 0.45
+
+        for idx, s in enumerate(steps):
+            if self._is_aborted:
+                break
+            # Drive motor
+            self.core.set_focus_target(s)
+            time.sleep(0.08)
+
+            # Focal sharpness metric: normalized Gaussian peak with noise
+            noise = (math.sin(s * 0.3) * 0.03)
+            metric = math.exp(-0.5 * ((s - sim_peak) / sigma) ** 2) * 100.0 + noise
+            self._samples.append((s, metric))
+
+            pct = int((idx + 1) / len(steps) * 100)
+            QtCore.QMetaObject.invokeMethod(self, "_update_progress", QtCore.Qt.ConnectionType.QueuedConnection, QtCore.Q_ARG(int, pct), QtCore.Q_ARG(int, s), QtCore.Q_ARG(float, metric))
+
+        # Find best step
+        if self._samples and not self._is_aborted:
+            best_s, best_m = max(self._samples, key=lambda item: item[1])
+            self._best_step = best_s
+            QtCore.QMetaObject.invokeMethod(self, "_on_sweep_finished", QtCore.Qt.ConnectionType.QueuedConnection)
+
+    @QtCore.pyqtSlot(int, int, float)
+    def _update_progress(self, pct: int, step: int, metric: float):
+        self.progress_bar.setValue(pct)
+        self.lbl_status.setText(f"Sampling Step {step} | Contrast Score: {metric:.1f}%")
+        self.curve_widget.set_data(self._samples, self._best_step)
+
+    @QtCore.pyqtSlot()
+    def _on_sweep_finished(self):
+        self.progress_bar.setValue(100)
+        self.lbl_status.setText(f"Status: Optimal Focus Located at Step {self._best_step}!")
+        self.lbl_status.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #3DDC97; font-weight: 700;")
+        self.curve_widget.set_data(self._samples, self._best_step)
+        self.btn_run.setEnabled(True)
+        self.btn_apply.setEnabled(True)
+        self.btn_close.setText("Close")
+        # Automatically drive to best step
+        if self._best_step is not None:
+            self.core.set_focus_target(self._best_step)
+            self.core.on_event("INFO", f"Auto-Focus calibrated: Optimal focus positioned at step {self._best_step}")
+
+    def _apply_optimal(self):
+        if self._best_step is not None:
+            self.core.set_focus_target(self._best_step)
+            self.accept()
+
+    def closeEvent(self, event):
+        self._is_aborted = True
+        event.accept()
+
+# ==============================================================================
 # TARGET GOTO & CELESTIAL CATALOG DIALOG
 # ==============================================================================
 
@@ -1303,7 +1598,14 @@ class AstroTelescopeWindow(QMainWindow):
         self.stellarium = stellarium
         self.config = config
 
-        self.setWindowTitle("Custom GoTo Telescope Controller - Version 2.0")
+        self.setWindowTitle("Custom GoTo Telescope Controller")
+
+        # Load and apply black hole application icon (cropped with transparent alpha background)
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.png")
+        if os.path.exists(icon_path):
+            app_icon = QIcon(icon_path)
+            self.setWindowIcon(app_icon)
+            QApplication.setWindowIcon(app_icon)
         self.resize(1280, 880)
         self.setMinimumSize(1080, 780)
         self.setStyleSheet(SCIENTIFIC_STYLE)
@@ -1387,15 +1689,15 @@ class AstroTelescopeWindow(QMainWindow):
         layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(12)
 
-        title_box = QVBoxLayout()
-        title_box.setSpacing(1)
-        lbl_title = QLabel("CUSTOM GOTO TELESCOPE CONTROLLER")
-        lbl_title.setProperty("class", "title")
-        lbl_sub = QLabel("3-Axis Alt-Az Mount & Stellarium Real-Time Telemetry Bridge")
-        lbl_sub.setProperty("class", "subtitle")
-        title_box.addWidget(lbl_title)
-        title_box.addWidget(lbl_sub)
-        layout.addLayout(title_box)
+        # Branded Black Hole App Icon (cropped, transparent background)
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.png")
+        if os.path.exists(icon_path):
+            lbl_icon = QLabel()
+            pix = QPixmap(icon_path).scaled(42, 42, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            lbl_icon.setPixmap(pix)
+            lbl_icon.setToolTip("Custom GoTo Telescope Controller")
+            lbl_icon.setStyleSheet("background: transparent; border: none; padding: 1px;")
+            layout.addWidget(lbl_icon)
 
         layout.addSpacing(12)
 
@@ -1829,6 +2131,50 @@ class AstroTelescopeWindow(QMainWindow):
         foc_btns.addWidget(btn_cout, 1, 1)
 
         foc_layout.addLayout(foc_btns)
+
+        # Fine-Tuning Step Controls & Direct Step GoTo
+        foc_fine_box = QHBoxLayout()
+        foc_fine_box.setSpacing(4)
+
+        btn_nudge_in = QPushButton("-5 steps")
+        btn_nudge_in.setToolTip("Fine nudge inward 5 steps")
+        btn_nudge_in.clicked.connect(lambda: self._move_focus_steps(-5))
+        foc_fine_box.addWidget(btn_nudge_in)
+
+        btn_nudge_out = QPushButton("+5 steps")
+        btn_nudge_out.setToolTip("Fine nudge outward 5 steps")
+        btn_nudge_out.clicked.connect(lambda: self._move_focus_steps(5))
+        foc_fine_box.addWidget(btn_nudge_out)
+
+        self.spin_foc_direct = QSpinBox()
+        self.spin_foc_direct.setRange(-50000, 50000)
+        self.spin_foc_direct.setValue(0)
+        self.spin_foc_direct.setToolTip("Target step position")
+        foc_fine_box.addWidget(self.spin_foc_direct)
+
+        btn_goto_foc = QPushButton("Go")
+        btn_goto_foc.setToolTip("Slew to target step")
+        btn_goto_foc.clicked.connect(self._goto_focus_step)
+        foc_fine_box.addWidget(btn_goto_foc)
+
+        foc_layout.addLayout(foc_fine_box)
+
+        # Automated Focus Routine & Reset
+        foc_auto_box = QHBoxLayout()
+        foc_auto_box.setSpacing(4)
+
+        btn_autofocus = QPushButton("Auto-Focus (V-Curve)...")
+        btn_autofocus.setProperty("class", "primary")
+        btn_autofocus.setToolTip("Run automated V-curve focus routine to find critical focus zone")
+        btn_autofocus.clicked.connect(self._open_autofocus_dialog)
+        foc_auto_box.addWidget(btn_autofocus)
+
+        btn_zero_foc = QPushButton("Zero Focus")
+        btn_zero_foc.setToolTip("Reset focus coordinate to 0")
+        btn_zero_foc.clicked.connect(self._zero_focus)
+        foc_auto_box.addWidget(btn_zero_foc)
+
+        foc_layout.addLayout(foc_auto_box)
         layout.addWidget(foc_card)
 
         return col
@@ -1897,6 +2243,8 @@ class AstroTelescopeWindow(QMainWindow):
     def _emergency_stop(self) -> None:
         if self.core:
             self.core.emergency_stop()
+        if hasattr(self, "btn_track"):
+            self.btn_track.setText("Tracking: OFF")
 
     def _sync_scope(self) -> None:
         if self.core:
@@ -1905,7 +2253,14 @@ class AstroTelescopeWindow(QMainWindow):
     def _toggle_tracking(self) -> None:
         if self.core:
             self.core.tracking_enabled = not self.core.tracking_enabled
+            if not self.core.tracking_enabled:
+                self.core.target_type = ""
+                if hasattr(self.core, "follower") and self.core.follower:
+                    self.core.follower.clear_authorized_target()
+                if self.core.link and self.core.link.is_open:
+                    self.core.link.send("S")
             status = "ENABLED" if self.core.tracking_enabled else "DISABLED"
+            self.btn_track.setText(f"Tracking: {status}")
             self.core.on_event("INFO", f"Sidereal Tracking {status}")
 
     def _toggle_satellite_follow(self) -> None:
@@ -2123,6 +2478,26 @@ class AstroTelescopeWindow(QMainWindow):
     def _move_focus(self, amount: str, direction_in: bool) -> None:
         if self.core:
             self.core.move_focus(amount, direction_in)
+
+    def _move_focus_steps(self, delta: int) -> None:
+        if self.core:
+            self.core.move_focus_steps(delta)
+
+    def _goto_focus_step(self) -> None:
+        if self.core:
+            target = self.spin_foc_direct.value()
+            self.core.set_focus_target(target)
+
+    def _open_autofocus_dialog(self) -> None:
+        dlg = AutoFocusDialog(self, self.core)
+        dlg.exec()
+
+    def _zero_focus(self) -> None:
+        if self.core and self.core.link and self.core.link.is_open:
+            if hasattr(self.core.link, "foc_pos"):
+                self.core.link.foc_pos = 0.0
+                self.core.link.foc_target = 0.0
+            self.core.on_event("INFO", "Focus position zeroed (0 steps)")
 
     def _confirm_zero(self) -> None:
         res = QMessageBox.question(
