@@ -765,7 +765,11 @@ class HelpGuideDialog(QDialog):
         <tr><td><b>Home Azimuth</b></td><td>--</td><td>Commands the azimuth axis to seek its physical microswitch (Pin A2) if installed.</td></tr>
         <tr><td><b>Park Telescope</b></td><td>--</td><td>Slews the telescope safely to its configured parking angles (default 0° Az, 0° Alt) and shuts off motor tracking.</td></tr>
         <tr><td><b>Zero Position (0,0)</b></td><td>--</td><td><b>Manual Alignment:</b> Level the telescope tube horizontally and point it True North, then click this button to set logical (0, 0) coordinates without limit switches.</td></tr>
-        <tr><td><b>Motorized Focus</b></td><td>--</td><td>Drives the focuser stepper motor in Coarse In/Out (200 steps) or Fine In/Out (20 steps).</td></tr>
+        <tr><td><b>Motorized Focus (Coarse & Fine)</b></td><td>--</td><td>Drives the focuser stepper motor in <b>Coarse (±200 steps)</b> for rapid travel or <b>Fine (±20 steps)</b> for standard focal adjustment.</td></tr>
+        <tr><td><b>Micro Fine Nudge (±5 steps)</b></td><td>--</td><td>Micro-steps the focuser by just 5 motor steps. Perfect for critical planetary, lunar, and high-magnification eyepiece focusing.</td></tr>
+        <tr><td><b>Direct Go To Step</b></td><td>--</td><td>Allows entering an exact step coordinate (e.g. 350) and clicking <b>Go</b> to return instantly to a known parfocal eyepiece position.</td></tr>
+        <tr><td><b>Zero Focus</b></td><td>--</td><td>Calibrates the current physical focuser drawtube position as step index 0.</td></tr>
+        <tr><td><b>Autofocus (V-Curve Routine)</b></td><td>--</td><td><b>Automated Star Focus:</b> Sweeps focal contrast across multiple step samples in a background routine, plots the parabolic V-curve, and automatically centers the motor at the sharpest critical focus zone (CFZ).</td></tr>
         <tr><td><b>Simulate Uno</b></td><td>--</td><td>Enables software-only simulation mode for testing without hardware connected.</td></tr>
         </table>
         """)
@@ -1556,13 +1560,19 @@ class GoToDialog(QDialog):
 
         solar_ok = False
         if sun_sep < keepout:
-            has_filter = getattr(self.core, 'solar_filter_confirmed', False) or self.config.get("solar_filter_installed", False)
-            if not has_filter:
-                parent_win = self.parent()
+            # Check if the user physically checked the Solar Filter Attached box on the GUI
+            parent_win = self.parent()
+            has_gui_filter = False
+            if hasattr(parent_win, 'chk_solar_filter') and parent_win.chk_solar_filter:
+                has_gui_filter = parent_win.chk_solar_filter.isChecked()
+
+            if not has_gui_filter:
+                # Solar filter attached box is unchecked: ALWAYS show warning dialog before slewing to Sun!
+                confirmed = False
                 if hasattr(parent_win, '_prompt_solar_warning'):
                     confirmed = parent_win._prompt_solar_warning(sun_sep)
-                else:
-                    confirmed = False
+                elif self.core and self.core.solar_warning_callback:
+                    confirmed = self.core.solar_warning_callback(sun_sep)
                 if not confirmed:
                     return
                 solar_ok = True
@@ -1634,6 +1644,7 @@ class AstroTelescopeWindow(QMainWindow):
 
         if self.core:
             self.core.solar_warning_callback = self._prompt_solar_warning
+            self.core.solar_filter_confirmed = False
 
         self._build_interface()
         self._setup_shortcuts()
@@ -1689,17 +1700,8 @@ class AstroTelescopeWindow(QMainWindow):
         layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(12)
 
-        # Branded Black Hole App Icon (cropped, transparent background)
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.png")
-        if os.path.exists(icon_path):
-            lbl_icon = QLabel()
-            pix = QPixmap(icon_path).scaled(42, 42, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            lbl_icon.setPixmap(pix)
-            lbl_icon.setToolTip("Custom GoTo Telescope Controller")
-            lbl_icon.setStyleSheet("background: transparent; border: none; padding: 1px;")
-            layout.addWidget(lbl_icon)
-
-        layout.addSpacing(12)
+        # Clean header column without icon or text banner
+        layout.addSpacing(4)
 
         # Serial Connection Bar
         conn_box = QHBoxLayout()
@@ -2163,7 +2165,7 @@ class AstroTelescopeWindow(QMainWindow):
         foc_auto_box = QHBoxLayout()
         foc_auto_box.setSpacing(4)
 
-        btn_autofocus = QPushButton("Auto-Focus (V-Curve)...")
+        btn_autofocus = QPushButton("Autofocus")
         btn_autofocus.setProperty("class", "primary")
         btn_autofocus.setToolTip("Run automated V-curve focus routine to find critical focus zone")
         btn_autofocus.clicked.connect(self._open_autofocus_dialog)
@@ -2319,8 +2321,8 @@ class AstroTelescopeWindow(QMainWindow):
             dlg = QDialog(parent)
             dlg.setWindowTitle("CRITICAL EYE SAFETY: Solar Observation Warning")
             dlg.setModal(True)
-            dlg.setStyleSheet(SCIENTIFIC_STYLE)
-            dlg.setMinimumWidth(500)
+            dlg.setStyleSheet("background-color: #11141A; color: #FFFFFF; font-family: 'Segoe UI', sans-serif;")
+            dlg.setMinimumWidth(520)
 
             layout = QVBoxLayout(dlg)
             layout.setContentsMargins(20, 20, 20, 20)
