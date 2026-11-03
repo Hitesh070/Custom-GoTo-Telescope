@@ -315,6 +315,19 @@ def run_suite():
     cleared_offsets = (core.alt_off_steps == 0 and core.az_off_steps == 0)
     assert_test("Sync Resets Offsets to Target Zero", cleared_offsets)
 
+    # Park followed by Sync: must slew back to target, not teleport H
+    core.park()
+    assert_test("Mount Park State Active", core.is_parked)
+    core.sync()
+    assert_test("Sync After Park Slews to Target (Not Teleport H)", not core.is_parked and core.tracking_enabled)
+
+    # Home followed by Sync: must slew back to target, not teleport H
+    core.home_axis("ALT")
+    assert_test("Mount Home State Active", core.is_homed)
+    time.sleep(0.25)  # Wait for simulated homing sequence to finish
+    core.sync()
+    assert_test("Sync After Home Slews to Target (Not Teleport H)", not core.is_homed and core.tracking_enabled)
+
     # Focus jogging
     foc_before = sim.foc_target
     core.move_focus("fine", True) # Inward (-20)

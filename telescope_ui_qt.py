@@ -1276,6 +1276,9 @@ class GoToDialog(QDialog):
 
         is_j2000 = getattr(self, "is_current_preset_j2000", (self.config.get("epoch", "J2000") == "J2000"))
         ok = self.core.on_goto_requested(ra, dec, is_j2000=is_j2000, solar_confirmed=solar_ok)
+        if ok and hasattr(self.core, "follower") and self.core.follower:
+            target_preset = self.combo_presets.currentText()
+            self.core.follower.authorize_target(target_preset)
         if ok:
             self.accept()
         else:
@@ -1306,7 +1309,9 @@ class AstroTelescopeWindow(QMainWindow):
         self.setStyleSheet(SCIENTIFIC_STYLE)
 
         self.selected_jog_speed: str = "medium"
-        self.follower: Any = StellariumHttpFollower(self.core) if (StellariumHttpFollower and self.core) else None
+        self.follower: Any = StellariumHttpFollower(self.core, require_explicit_goto=True) if (StellariumHttpFollower and self.core) else None
+        if self.follower and self.core:
+            self.core.follower = self.follower
 
         # Thread-safe solar safety modal prompt bridge
         self.solar_bridge = SolarSafetyBridge()

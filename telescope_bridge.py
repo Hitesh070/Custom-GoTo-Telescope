@@ -909,6 +909,8 @@ class StellariumServer:
                             # Match configured epoch: J2000 or JNow
                             is_j2000 = (self.core.config.get("epoch", "J2000") == "J2000")
                             self.core.on_goto_requested(ra_deg, dec_deg, is_j2000=is_j2000)
+                            if hasattr(self.core, "follower") and self.core.follower:
+                                self.core.follower.authorize_target(self.core.follower.target_name)
                         except Exception as ex:
                             logging.warning(f"Failed to parse goto message: {ex}")
                     else:
@@ -951,11 +953,13 @@ class StellariumServer:
 class StellariumHttpFollower:
     """Continuously polls Stellarium Remote Control HTTP API to track moving satellites and live targets."""
 
-    def __init__(self, core: 'BridgeCore', host: str = "127.0.0.1", port: int = 8090, poll_interval_s: float = 0.5):
+    def __init__(self, core: 'BridgeCore', host: str = "127.0.0.1", port: int = 8090, poll_interval_s: float = 0.5, require_explicit_goto: bool = False):
         self.core = core
         self.host = host
         self.port = port
         self.poll_interval_s = poll_interval_s
+        self.require_explicit_goto: bool = require_explicit_goto
+        self.authorized_target_name: Optional[str] = None
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self.is_active: bool = False
@@ -967,6 +971,14 @@ class StellariumHttpFollower:
         self.prev_az: Optional[float] = None
         self.prev_poll_time: Optional[float] = None
         self.last_target_name: str = ""
+
+    def authorize_target(self, name: str) -> None:
+        """Authorizes a specific target for live follow (set when user commands GoTo via Ctrl+1)."""
+        self.authorized_target_name = name
+
+    def clear_authorized_target(self) -> None:
+        """Clears authorized target."""
+        self.authorized_target_name = None
 
     def sync_location_from_stellarium(self) -> Optional[Tuple[float, float, str]]:
         """Queries Stellarium HTTP API to get observer latitude, longitude, and site name."""
@@ -1039,8 +1051,13 @@ class StellariumHttpFollower:
                             has_altaz = ("altitude" in data and "azimuth" in data)
 
                             if is_satellite and has_altaz:
-                                cur_alt = float(data["altitude"])
-                                cur_az = float(data["azimuth"])
+                                if self.require_explicit_goto and (self.authorized_target_name != name):
+                                    # User is browsing / inspecting this object in Stellarium, but has NOT commanded
+                                    # a GoTo slew via Ctrl+1 yet. Do not auto-slew on click or double-click.
+                                    self.last_target_name = name
+                                else:
+                                    cur_alt = float(data["altitude"])
+                                    cur_az = float(data["azimuth"])
                                 now = time.time()
 
                                 v_az = 0.0
@@ -1165,6 +1182,9 @@ class BridgeCore:
         self.current_target_is_j2000: bool = True
         self.current_target_of_date: Optional[Tuple[float, float]] = None
         self.tracking_enabled: bool = False
+        self.is_parked: bool = False
+        self.is_homed: bool = False
+        self.follower: Optional[Any] = None
         self.az_off_steps: int = 0
         self.alt_off_steps: int = 0
         self.last_sent_steps: Optional[Tuple[int, int]] = None
@@ -1301,6 +1321,9 @@ class BridgeCore:
             self.on_event("WARNING", msg)
             logging.warning(msg)
             return False
+
+        self.is_parked = False
+        self.is_homed = False
 
         t0 = self.get_time()
         lat = float(self.config["latitude_deg"])
@@ -1712,14 +1735,32 @@ class BridgeCore:
         old_az = self.link.latest_telemetry.az_steps
         old_alt = self.link.latest_telemetry.alt_steps
 
+        # Compute angular distance between physical pointing and theoretical target
+        cur_alt, cur_az = self.get_telescope_altaz()
+        d_az = abs(az_compass - cur_az)
+        if d_az > 180.0:
+            d_az = 360.0 - d_az
+        d_alt = abs(alt - cur_alt)
+        angular_dist = math.hypot(d_az, d_alt)
+
+        # If mount is parked, homed, or not pointing near the target (> 3.0°),
+        # do NOT send 'H' (which teleports coordinates without moving motors).
+        # Instead, smoothly slew the mount to the target!
+        if getattr(self, "is_parked", False) or getattr(self, "is_homed", False) or angular_dist > 3.0:
+            self.is_parked = False
+            self.is_homed = False
+            self.on_event("INFO", f"Sync: slewing telescope to target ({angular_dist:.1f}° away)...")
+            return self.on_goto_requested(ra_tgt, dec_tgt, is_j2000=is_j2000)
+
+        # Fine star-alignment calibration (within 3.0° of target):
         reply = self.link.send(f"H {sync_az_steps} {sync_alt_steps}")
         if reply == "OK":
             self.az_off_steps = 0
             self.alt_off_steps = 0
-            d_az = sync_az_steps - old_az
-            d_alt = sync_alt_steps - old_alt
-            note = f"d_az={d_az:+d} d_alt={d_alt:+d} steps"
-            self.on_event("INFO", f"SYNC successful: {note}")
+            d_az_s = sync_az_steps - old_az
+            d_alt_s = sync_alt_steps - old_alt
+            note = f"d_az={d_az_s:+d} d_alt={d_alt_s:+d} steps"
+            self.on_event("INFO", f"SYNC successful (calibrated): {note}")
             if self.config["log_csv"]:
                 self.logger.log("SYNC", target_ra=ra_tgt, target_dec=dec_tgt,
                                 target_alt=alt, target_az=az_compass,
@@ -1739,6 +1780,9 @@ class BridgeCore:
     def park(self) -> None:
         """Parks telescope at configured park angles."""
         self.tracking_enabled = False
+        self.is_parked = True
+        if hasattr(self, "follower") and self.follower:
+            self.follower.clear_authorized_target()
         if not self.link or not self.link.is_open:
             return
 
@@ -1754,6 +1798,9 @@ class BridgeCore:
         if not self.link or not self.link.is_open:
             return
         self.tracking_enabled = False
+        self.is_homed = True
+        if hasattr(self, "follower") and self.follower:
+            self.follower.clear_authorized_target()
         reply = self.link.send(f"Z {axis}")
         if reply == "OK":
             self.on_event("INFO", f"Homing {axis} started...")
@@ -1777,6 +1824,10 @@ class BridgeCore:
         """Sets current physical orientation as logical (0, 0)."""
         if not self.link or not self.link.is_open:
             return
+        self.is_parked = False
+        self.is_homed = False
+        if hasattr(self, "follower") and self.follower:
+            self.follower.clear_authorized_target()
         reply = self.link.send("H 0 0")
         if reply == "OK":
             self.az_off_steps = 0
