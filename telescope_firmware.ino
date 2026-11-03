@@ -19,13 +19,13 @@
 // =============================================================================
 
 // Default speeds and accelerations (steps/s and steps/s^2)
-const float AZ_MAX_SPEED_DEFAULT    = 700.0f;
-const float ALT_MAX_SPEED_DEFAULT   = 700.0f;
-const float FOC_MAX_SPEED_DEFAULT   = 500.0f;
+const float AZ_MAX_SPEED_DEFAULT    = 226.0f;
+const float ALT_MAX_SPEED_DEFAULT   = 226.0f;
+const float FOC_MAX_SPEED_DEFAULT   = 300.0f;
 
-const float AZ_ACCEL_DEFAULT        = 300.0f;
-const float ALT_ACCEL_DEFAULT       = 300.0f;
-const float FOC_ACCEL_DEFAULT       = 300.0f;
+const float AZ_ACCEL_DEFAULT        = 100.0f;
+const float ALT_ACCEL_DEFAULT       = 100.0f;
+const float FOC_ACCEL_DEFAULT       = 150.0f;
 
 // Calibration scale (used ONLY to compute boot default limits; PC overrides with L command)
 const float STEPS_PER_DEG_AZ        = 113.22f;
@@ -86,6 +86,10 @@ long    azLimitMin      = DEFAULT_AZ_LIMIT_MIN;
 long    azLimitMax      = DEFAULT_AZ_LIMIT_MAX;
 long    altLimitMin     = DEFAULT_ALT_LIMIT_MIN;
 long    altLimitMax     = DEFAULT_ALT_LIMIT_MAX;
+
+// Configured maximum speeds for coordinated multi-axis constant velocity
+float   azConfiguredMaxSpeed  = AZ_MAX_SPEED_DEFAULT;
+float   altConfiguredMaxSpeed = ALT_MAX_SPEED_DEFAULT;
 
 // Telemetry status
 uint8_t homedBits       = 0; // bit 0 = Altitude homed, bit 1 = Azimuth homed
@@ -214,13 +218,29 @@ void processCommand(char* line) {
       int8_t newDirAz = (targetAz > curAzLog) ? +1 : ((targetAz < curAzLog) ? -1 : azLastDir);
       azLastDir = newDirAz;
       azComp = (azLastDir > 0) ? azBacklash : 0;
-      azStepper.moveTo(targetAz + azComp);
 
       // Altitude backlash and move calculation (Section 5.2)
       long curAltLog = getLogicalAlt();
       int8_t newDirAlt = (targetAlt > curAltLog) ? +1 : ((targetAlt < curAltLog) ? -1 : altLastDir);
       altLastDir = newDirAlt;
       altComp = (altLastDir > 0) ? altBacklash : 0;
+
+      // Coordinated constant-velocity multi-axis vector scaling
+      long distAz = labs((targetAz + azComp) - azStepper.currentPosition());
+      long distAlt = labs((targetAlt + altComp) - altStepper.currentPosition());
+      long distMax = (distAz > distAlt) ? distAz : distAlt;
+
+      if (distMax > 0) {
+        float speedAz = azConfiguredMaxSpeed * ((float)distAz / (float)distMax);
+        float speedAlt = altConfiguredMaxSpeed * ((float)distAlt / (float)distMax);
+        azStepper.setMaxSpeed((speedAz < 10.0f) ? 10.0f : speedAz);
+        altStepper.setMaxSpeed((speedAlt < 10.0f) ? 10.0f : speedAlt);
+      } else {
+        azStepper.setMaxSpeed(azConfiguredMaxSpeed);
+        altStepper.setMaxSpeed(altConfiguredMaxSpeed);
+      }
+
+      azStepper.moveTo(targetAz + azComp);
       altStepper.moveTo(targetAlt + altComp);
 
       Serial.println(F("OK"));
@@ -383,8 +403,10 @@ void processCommand(char* line) {
         return;
       }
 
-      azStepper.setMaxSpeed((float)vAz);
-      altStepper.setMaxSpeed((float)vAlt);
+      azConfiguredMaxSpeed = (float)vAz;
+      altConfiguredMaxSpeed = (float)vAlt;
+      azStepper.setMaxSpeed(azConfiguredMaxSpeed);
+      altStepper.setMaxSpeed(altConfiguredMaxSpeed);
       focStepper.setMaxSpeed((float)vFoc);
       Serial.println(F("OK"));
       break;

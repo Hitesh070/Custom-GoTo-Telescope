@@ -12,6 +12,14 @@ ENV/
 *.log
 pointing_log.csv
 
+# PyInstaller builds
+build/
+dist/
+*.spec
+
+# Temporary scratch files
+scratch/
+
 # Editors / IDEs
 .vscode/
 .idea/

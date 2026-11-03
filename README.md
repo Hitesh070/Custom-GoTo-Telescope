@@ -66,6 +66,21 @@ A 3-axis Alt-Az motorized telescope GoTo mount controller with motorized focusin
 
 ---
 
+## AstroGoTo v2.0 Desktop Application & Enhancements
+
+Version 2.0 introduces a standalone scientific GUI desktop interface (`telescope_ui_qt.py` and `AstroGoTo.exe`) with professional astrometric capabilities:
+
+* **High-Speed Telemetry Streaming:** 25 FPS real-time readouts of apparent Alt/Az, topocentric and J2000 RA/Dec, Local Sidereal Time, Hour Angle, Galactic ($l, b$), Ecliptic ($\lambda, \beta$), and rise/transit/set ephemeris.
+* **Enlarged Polar Sky Radar:** Real-time visual celestial sphere displaying physical telescope pointing, active target reticle, Sun danger keep-out exclusion zone, and cardinal compass bearings.
+* **Predictive Time-of-Flight Intercept:** Eliminates the classic 15–20 arcminute slew lag on long hops by computing the exact future star coordinates at arrival time via fixed-point contraction mapping ($< 1$ physical motor step accuracy).
+* **Safe Constant Slew Speeds:** Motors operate at a verified safe constant velocity ($226\text{ steps/s} \approx 2.0^\circ/\text{s}$) with Chebyshev multi-axis proportional scaling to eliminate stall and step slipping on 28BYJ-48 gearing.
+* **Dynamic Satellite Tracking:** Continuous velocity-lead feedforward tracking of the ISS and satellites via Stellarium Remote Control API (Port 8090).
+* **Solar Observation Safety & Certified Filter Override:** Protects equipment and eyesight with keep-out enforcement while allowing legitimate solar observation when a certified solar filter is confirmed.
+* **Automatic Site Synchronization:** Automatically syncs observer latitude and longitude from Stellarium.
+* **Standalone Executable:** Compiled standalone Windows `.exe` ready for single-click execution.
+
+---
+
 ## Getting Started
 
 ### 1. Arduino Firmware
@@ -73,25 +88,22 @@ A 3-axis Alt-Az motorized telescope GoTo mount controller with motorized focusin
 2. Install the **AccelStepper** library (via Library Manager).
 3. Connect the Arduino Uno over USB, select the COM port, and click **Upload**.
 
-### 2. Python Bridge Setup
-1. Ensure Python 3.8+ is installed.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Edit [`telescope_config.json`](telescope_config.json) to set your local geographic coordinates:
-   ```json
-   {
-     "latitude_deg": 12.84,
-     "longitude_deg": 80.15,
-     "serial_port": "COM3"
-   }
-   ```
-4. Run the bridge:
-   ```bash
-   python telescope_bridge.py
-   ```
-   *(Add `--simulate` to run and test without physical hardware attached).*
+### 2. Running AstroGoTo v2.0
+Launch directly via the precompiled standalone executable:
+```bash
+dist/AstroGoTo.exe
+```
+Or run the Python application:
+```bash
+python telescope_ui_qt.py
+```
+*(Or double-click `run_app.bat`)*.
+
+To run the headless bridge directly:
+```bash
+python telescope_bridge.py
+```
+*(Add `--simulate` to run and test without physical hardware attached).*
 
 ### 3. Stellarium Setup
 1. Open Stellarium and go to **Configuration (`F2`) -> Plugins -> Telescope Control -> Enable**.

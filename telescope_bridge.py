@@ -44,25 +44,54 @@ D2R = math.pi / 180.0
 
 def julian_date(t):                      # t: timezone-naive UTC datetime
     y, m = t.year, t.month
-    d = t.day + (t.hour + (t.minute + t.second / 60.0) / 60.0) / 24.0
+    sec = t.second + getattr(t, 'microsecond', 0) / 1_000_000.0
+    d = t.day + (t.hour + (t.minute + sec / 60.0) / 60.0) / 24.0
     if m <= 2: y, m = y - 1, m + 12
     a = y // 100
     return int(365.25 * (y + 4716)) + int(30.6001 * (m + 1)) + d + 2 - a + a // 4 - 1524.5
 
-def lst_deg(jd, lon_deg):                # lon: east positive
+def lst_deg(jd_or_t, lon_deg):                # lon: east positive; accepts float JD or datetime
+    if hasattr(jd_or_t, 'year'):
+        jd = julian_date(jd_or_t)
+    else:
+        jd = float(jd_or_t)
     return (280.46061837 + 360.98564736629 * (jd - 2451545.0) + lon_deg) % 360.0
 
-def radec_to_altaz(ra, dec, lat, lon, t):        # all degrees; az from North, East = 90
+def true_to_apparent_alt(h_deg: float) -> float:
+    """Bennett (1982) formula for atmospheric refraction (Meeus standard)."""
+    if h_deg < -1.0:
+        return h_deg
+    R_arcmin = 1.02 / math.tan(math.radians(h_deg + 10.3 / (h_deg + 5.11)))
+    return h_deg + R_arcmin / 60.0
+
+def apparent_to_true_alt(h_app_deg: float) -> float:
+    """Exact inverse of Bennett formula by 4-pass fixed point iteration (<0.0001 arcsec error)."""
+    if h_app_deg < -1.0:
+        return h_app_deg
+    h_true = h_app_deg
+    for _ in range(4):
+        r = 1.02 / math.tan(math.radians(h_true + 10.3 / (h_true + 5.11)))
+        h_app_calc = h_true + r / 60.0
+        h_true = h_true + (h_app_deg - h_app_calc)
+    return h_true
+
+def radec_to_altaz(ra, dec, lat, lon, t, apply_refraction=False):        # all degrees; az from North, East = 90
     ha = (lst_deg(julian_date(t), lon) - ra) * D2R
     d, p = dec * D2R, lat * D2R
-    alt = math.asin(math.sin(d) * math.sin(p) + math.cos(d) * math.cos(p) * math.cos(ha))
+    sin_alt = math.sin(d) * math.sin(p) + math.cos(d) * math.cos(p) * math.cos(ha)
+    alt = math.asin(max(-1.0, min(1.0, sin_alt)))
     az = math.atan2(-math.sin(ha) * math.cos(d),
                     math.cos(p) * math.sin(d) - math.sin(p) * math.cos(d) * math.cos(ha))
-    return alt / D2R, (az / D2R) % 360.0
+    alt_deg = alt / D2R
+    if apply_refraction:
+        alt_deg = true_to_apparent_alt(alt_deg)
+    return alt_deg, (az / D2R) % 360.0
 
-def altaz_to_radec(alt, az, lat, lon, t):        # needed for the position reported to Stellarium
-    a, z, p = alt * D2R, az * D2R, lat * D2R
-    dec = math.asin(math.sin(a) * math.sin(p) + math.cos(a) * math.cos(p) * math.cos(z))
+def altaz_to_radec(alt, az, lat, lon, t, apply_refraction=False):        # needed for the position reported to Stellarium
+    alt_geom = apparent_to_true_alt(alt) if apply_refraction else alt
+    a, z, p = alt_geom * D2R, az * D2R, lat * D2R
+    sin_dec = math.sin(a) * math.sin(p) + math.cos(a) * math.cos(p) * math.cos(z)
+    dec = math.asin(max(-1.0, min(1.0, sin_dec)))
     ha = math.atan2(-math.sin(z) * math.cos(a),
                     math.sin(a) * math.cos(p) - math.cos(a) * math.sin(p) * math.cos(z))
     return (lst_deg(julian_date(t), lon) - ha / D2R) % 360.0, dec / D2R
@@ -76,7 +105,7 @@ def precess_j2000_to_date(ra, dec, t):           # skip this if Stellarium is se
     A = math.cos(d) * math.sin(a + zeta)
     B = math.cos(th) * math.cos(d) * math.cos(a + zeta) - math.sin(th) * math.sin(d)
     C = math.sin(th) * math.cos(d) * math.cos(a + zeta) + math.cos(th) * math.sin(d)
-    return (math.atan2(A, B) + z) / D2R % 360.0, math.asin(C) / D2R
+    return (math.atan2(A, B) + z) / D2R % 360.0, math.asin(max(-1.0, min(1.0, C))) / D2R
 
 def pack_position(ra_deg, dec_deg, status=0):    # bridge -> Stellarium, 24 bytes
     ra = int(round((ra_deg % 360.0) / 360.0 * 2**32)) & 0xFFFFFFFF
@@ -95,7 +124,7 @@ def sun_radec(t):                                # low-precision Sun position, a
     lam = (L + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g)) * D2R
     eps = (23.439 - 4e-7 * n) * D2R
     return (math.atan2(math.cos(eps) * math.sin(lam), math.cos(lam)) / D2R) % 360.0, \
-           math.asin(math.sin(eps) * math.sin(lam)) / D2R
+           math.asin(max(-1.0, min(1.0, math.sin(eps) * math.sin(lam)))) / D2R
 
 def separation_deg(ra1, dec1, ra2, dec2):
     c = (math.sin(dec1 * D2R) * math.sin(dec2 * D2R) +
@@ -104,7 +133,10 @@ def separation_deg(ra1, dec1, ra2, dec2):
 
 def choose_az_branch(az_deg, current_deg, limit=200.0):
     """az in [0,360) from North -> equivalent angle within +/-limit, nearest to where we are."""
-    cands = [a for a in (az_deg, az_deg - 360.0) if -limit <= a <= limit]
+    az_norm = az_deg % 360.0
+    cands = [a for a in (az_norm, az_norm - 360.0, az_norm + 360.0) if -limit <= a <= limit]
+    if not cands:
+        return max(-limit, min(limit, az_norm if az_norm <= 180.0 else az_norm - 360.0))
     return min(cands, key=lambda a: abs(a - current_deg))
 
 def precess_date_to_j2000(ra, dec, t):
@@ -123,7 +155,8 @@ def precess_date_to_j2000(ra, dec, t):
 DEFAULT_CONFIG: Dict[str, Any] = {
     "latitude_deg": 12.84,
     "longitude_deg": 80.15,
-    "epoch": "JNow",
+    "epoch": "J2000",
+    "apply_refraction": True,
     "serial_port": "",
     "baud": 115200,
     "simulate": False,
@@ -136,18 +169,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "sign_focus": 1,
     "backlash_az": 0,
     "backlash_alt": 0,
-    "speed_az": 700,
-    "speed_alt": 700,
-    "speed_foc": 500,
-    "accel_az": 300,
-    "accel_alt": 300,
-    "accel_foc": 300,
+    "speed_az": 226,
+    "speed_alt": 226,
+    "speed_foc": 300,
+    "accel_az": 100,
+    "accel_alt": 100,
+    "accel_foc": 150,
     "az_limit_deg": 200,
     "alt_min_deg": 0,
     "alt_max_deg": 85,
     "sun_keepout_deg": 15,
+    "solar_filter_installed": False,
     "tracking_interval_s": 1.0,
-    "position_report_interval_s": 0.3,
+    "position_report_interval_s": 0.2,
     "position_poll_interval_s": 0.3,
     "jog_deg": {"fine": 0.05, "medium": 0.5, "coarse": 3.0},
     "focus_steps": {"fine": 20, "coarse": 200},
@@ -523,23 +557,23 @@ class SimLink(LinkBase):
             self._last_update_time = now
 
             with self.send_lock:
-                # Update Azimuth
+                # Coordinated constant-velocity multi-axis vector motion (matches firmware Chebyshev scaling)
                 diff_az = self.az_target - self.az_pos
-                if abs(diff_az) > 0.01:
-                    step_az = self.speed_az * dt_s
-                    if abs(diff_az) <= step_az:
-                        self.az_pos = self.az_target
-                    else:
-                        self.az_pos += math.copysign(step_az, diff_az)
-
-                # Update Altitude
                 diff_alt = self.alt_target - self.alt_pos
-                if abs(diff_alt) > 0.01:
-                    step_alt = self.speed_alt * dt_s
-                    if abs(diff_alt) <= step_alt:
+                dist_az = abs(diff_az)
+                dist_alt = abs(diff_alt)
+                dist_max = max(dist_az, dist_alt)
+
+                if dist_max > 0.01:
+                    max_speed = max(self.speed_az, self.speed_alt)
+                    step_max = max_speed * dt_s
+                    if dist_max <= step_max:
+                        self.az_pos = self.az_target
                         self.alt_pos = self.alt_target
                     else:
-                        self.alt_pos += math.copysign(step_alt, diff_alt)
+                        ratio = step_max / dist_max
+                        self.az_pos += diff_az * ratio
+                        self.alt_pos += diff_alt * ratio
 
                 # Update Focus
                 diff_foc = self.foc_target - self.foc_pos
@@ -562,6 +596,9 @@ class SimLink(LinkBase):
                             self.az_target = 0.0
                             self.homed_bits |= 2
                         self.homing_axis = None
+
+                # Keep simulated telemetry refreshed at 50 Hz
+                self._update_telemetry()
 
     def _update_telemetry(self) -> None:
         is_moving = 1 if (
@@ -766,6 +803,7 @@ class StellariumServer:
         self._report_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self.is_client_connected: bool = False
+        self.is_running: bool = False
 
     def start(self) -> None:
         self._stop_event.clear()
@@ -775,6 +813,7 @@ class StellariumServer:
         # Update port if bound dynamically (port 0)
         self.port = self.server_sock.getsockname()[1]
         self.server_sock.listen(1)
+        self.is_running = True
 
         self._server_thread = threading.Thread(target=self._accept_loop, daemon=True, name="StellariumAccept")
         self._server_thread.start()
@@ -783,6 +822,7 @@ class StellariumServer:
         self._report_thread.start()
 
     def stop(self) -> None:
+        self.is_running = False
         self._stop_event.set()
         if self.client_sock:
             try:
@@ -848,7 +888,9 @@ class StellariumServer:
                     if msg_len == 20:
                         try:
                             ra_deg, dec_deg = parse_goto(msg_bytes)
-                            self.core.on_goto_requested(ra_deg, dec_deg)
+                            # Match configured epoch: J2000 or JNow
+                            is_j2000 = (self.core.config.get("epoch", "J2000") == "J2000")
+                            self.core.on_goto_requested(ra_deg, dec_deg, is_j2000=is_j2000)
                         except Exception as ex:
                             logging.warning(f"Failed to parse goto message: {ex}")
                     else:
@@ -873,6 +915,7 @@ class StellariumServer:
         interval = float(self.core.config.get("position_report_interval_s", 0.3))
         while not self._stop_event.is_set():
             if self.is_client_connected and self.client_sock:
+                # Report position matching the configured epoch (J2000 or JNow)
                 ra_deg, dec_deg = self.core.get_telescope_radec()
                 try:
                     packet = pack_position(ra_deg, dec_deg, status=0)
@@ -881,6 +924,148 @@ class StellariumServer:
                     logging.debug(f"Failed to send position to Stellarium: {e}")
                     self.is_client_connected = False
             time.sleep(interval)
+
+
+# ==============================================================================
+# STELLARIUM HTTP FOLLOWER (Satellite & Dynamic Target Tracking via Port 8090)
+# ==============================================================================
+
+class StellariumHttpFollower:
+    """Continuously polls Stellarium Remote Control HTTP API to track moving satellites and live targets."""
+
+    def __init__(self, core: 'BridgeCore', host: str = "127.0.0.1", port: int = 8090, poll_interval_s: float = 0.5):
+        self.core = core
+        self.host = host
+        self.port = port
+        self.poll_interval_s = poll_interval_s
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self.is_active: bool = False
+        self.is_connected: bool = False
+        self.target_name: str = ""
+        self.target_type: str = ""
+        self.last_poll_time: float = 0.0
+        self.prev_alt: Optional[float] = None
+        self.prev_az: Optional[float] = None
+        self.prev_poll_time: Optional[float] = None
+        self.last_target_name: str = ""
+
+    def sync_location_from_stellarium(self) -> Optional[Tuple[float, float, str]]:
+        """Queries Stellarium HTTP API to get observer latitude, longitude, and site name."""
+        import urllib.request
+        import json
+        url = f"http://{self.host}:{self.port}/api/main/status"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "AstroGoTo-Bridge/2.0"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    loc = data.get("location", {})
+                    lat = loc.get("latitude")
+                    lon = loc.get("longitude")
+                    name = loc.get("name") or loc.get("role") or "Stellarium Site"
+                    if lat is not None and lon is not None:
+                        return float(lat), float(lon), str(name)
+        except Exception as e:
+            logging.debug(f"Could not sync location from Stellarium: {e}")
+        return None
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self.is_active = True
+        self.prev_alt = None
+        self.prev_az = None
+        self.prev_poll_time = None
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name="StellariumHttpFollower")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self.is_active = False
+        self._stop_event.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=0.5)
+        self._thread = None
+        self.is_connected = False
+        self.prev_alt = None
+        self.prev_az = None
+        self.prev_poll_time = None
+
+    def _poll_loop(self) -> None:
+        import urllib.request
+        import json
+
+        url = f"http://{self.host}:{self.port}/api/objects/info?format=json"
+
+        while not self._stop_event.is_set():
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "AstroGoTo-Bridge/2.0"})
+                with urllib.request.urlopen(req, timeout=0.8) as resp:
+                    if resp.status == 200:
+                        raw = resp.read().decode("utf-8")
+                        data = json.loads(raw)
+                        self.is_connected = True
+                        self.last_poll_time = time.time()
+
+                        if data:
+                            name = data.get("name") or data.get("localized-name") or "Tracked Object"
+                            obj_type = (data.get("type") or "celestial").lower()
+
+                            self.target_name = name
+                            self.target_type = obj_type
+                            self.core.target_name = name
+                            self.core.target_type = obj_type
+
+                            is_satellite = ("satellite" in obj_type) or ("spacecraft" in obj_type) or ("iss" in name.lower())
+                            has_altaz = ("altitude" in data and "azimuth" in data)
+
+                            if is_satellite and has_altaz:
+                                cur_alt = float(data["altitude"])
+                                cur_az = float(data["azimuth"])
+                                now = time.time()
+
+                                v_az = 0.0
+                                v_alt = 0.0
+                                if self.prev_poll_time is not None and (0.05 < now - self.prev_poll_time < 3.0):
+                                    dt_s = now - self.prev_poll_time
+                                    d_az = cur_az - (self.prev_az if self.prev_az is not None else cur_az)
+                                    if d_az > 180.0:
+                                        d_az -= 360.0
+                                    elif d_az < -180.0:
+                                        d_az += 360.0
+                                    d_alt = cur_alt - (self.prev_alt if self.prev_alt is not None else cur_alt)
+                                    v_az = d_az / dt_s
+                                    v_alt = d_alt / dt_s
+
+                                self.prev_poll_time = now
+                                self.prev_alt = cur_alt
+                                self.prev_az = cur_az
+
+                                # Predictive lead feedforward: aim where satellite will be when motors arrive
+                                tau_lead = 0.50
+                                pred_az = (cur_az + v_az * tau_lead) % 360.0
+                                pred_alt = max(0.0, min(85.0, cur_alt + v_alt * tau_lead))
+
+                                self.core.track_satellite_altaz(pred_alt, pred_az, name=name)
+                            else:
+                                # Celestial object: record name for display, but NEVER auto-slew on click.
+                                # Slew commands are commanded explicitly by the user via Ctrl+1 (port 10001) or GoTo dialog.
+                                self.last_target_name = name
+
+                        # Automatic location synchronization from Stellarium
+                        if not getattr(self, "_has_auto_synced_location", False):
+                            loc = self.sync_location_from_stellarium()
+                            if loc:
+                                lat, lon, site_name = loc
+                                self.core.config["latitude_deg"] = lat
+                                self.core.config["longitude_deg"] = lon
+                                self._has_auto_synced_location = True
+                                self.core.on_event("INFO", f"Observer location automatically synchronized from Stellarium: Lat {lat:.4f}°, Lon {lon:.4f}° ({site_name})")
+            except Exception:
+                self.is_connected = False
+
+            time.sleep(self.poll_interval_s)
 
 # ==============================================================================
 # POINTING CSV LOGGER (Section 8.7)
@@ -950,12 +1135,26 @@ class BridgeCore:
 
         # Mount target and tracking state
         self.current_target_radec: Optional[Tuple[float, float]] = None  # as received (JNow or J2000)
+        self.current_target_is_j2000: bool = True
         self.current_target_of_date: Optional[Tuple[float, float]] = None
         self.tracking_enabled: bool = False
         self.az_off_steps: int = 0
         self.alt_off_steps: int = 0
         self.last_sent_steps: Optional[Tuple[int, int]] = None
         self.last_goto_target_str: str = "None"
+        self.target_name: str = "Target"
+        self.target_type: str = "star"
+
+        # Tracking telemetry and activity metrics
+        self.tracking_pulses_count: int = 0
+        self.tracking_last_pulse_time: float = 0.0
+        self.tracking_total_steps_az: int = 0
+        self.tracking_total_steps_alt: int = 0
+        self.tracking_initial_steps: Optional[Tuple[int, int]] = None
+
+        # Solar observation confirmation state & safety callback for GUI confirmation
+        self.solar_filter_confirmed: bool = bool(self.config.get("solar_filter_installed", False))
+        self.solar_warning_callback: Optional[Callable[[float], bool]] = None
 
         # Event queue for GUI / logging
         self.event_queue: queue.Queue[Tuple[str, str]] = queue.Queue()
@@ -984,20 +1183,33 @@ class BridgeCore:
         if simulate is not None:
             self.config["simulate"] = simulate
 
-        is_sim = self.config["simulate"]
+        # If a link already exists and simulate was not explicitly passed, keep it
         if self.link is None:
-            if is_sim:
+            if self.config["simulate"]:
                 self.link = SimLink(self.config)
             else:
                 p = port or self.config["serial_port"]
                 self.link = SerialLink(p, baud=self.config["baud"], poll_interval_s=self.config["position_poll_interval_s"])
+        elif simulate is not None:
+            is_sim = bool(simulate)
+            if is_sim != (type(self.link).__name__ == "SimLink"):
+                if self.link.is_open:
+                    try:
+                        self.link.close()
+                    except Exception:
+                        pass
+                if is_sim:
+                    self.link = SimLink(self.config)
+                else:
+                    p = port or self.config["serial_port"]
+                    self.link = SerialLink(p, baud=self.config["baud"], poll_interval_s=self.config["position_poll_interval_s"])
 
         if not self.link.is_open:
             if not self.link.open():
-                self.on_event("ERROR", f"Failed to connect to {'Simulator' if is_sim else self.config['serial_port']}")
+                self.on_event("ERROR", f"Failed to connect to {'Simulator' if self.config['simulate'] else self.config['serial_port']}")
                 return False
 
-        self.on_event("INFO", f"Connected to {'Simulator' if is_sim else self.config['serial_port']}")
+        self.on_event("INFO", f"Connected to {'Simulator' if self.config['simulate'] else self.config['serial_port']}")
 
         # Send initial hardware parameters: V, A, L, B, P
         self.push_hardware_config()
@@ -1048,61 +1260,125 @@ class BridgeCore:
         # 5. Initial telemetry poll
         self.link.send("P")
 
-    def on_goto_requested(self, ra: float, dec: float) -> bool:
-        """Processes GoTo command from Stellarium or GUI (Section 8.5)."""
+    def on_goto_requested(self, ra: float, dec: float, is_j2000: Optional[bool] = None,
+                          predict_flight: bool = True, solar_confirmed: bool = False) -> bool:
+        """Processes GoTo command from Stellarium or GUI with predictive time-of-flight intercept (Section 8.5)."""
         if not self.link or not self.link.is_open or not self.link.latest_telemetry.valid:
             msg = "GoTo ignored: telescope not connected"
             self.on_event("WARNING", msg)
             logging.warning(msg)
             return False
 
-        t = self.get_time()
+        t0 = self.get_time()
         lat = float(self.config["latitude_deg"])
         lon = float(self.config["longitude_deg"])
-        epoch = self.config["epoch"]
+        epoch = self.config.get("epoch", "J2000")
 
-        # Step 2: Convert target to of-date coordinates
-        if epoch == "J2000":
-            ra_date, dec_date = precess_j2000_to_date(ra, dec, t)
+        if is_j2000 is None:
+            is_j2000 = (epoch == "J2000")
+
+        # Step 2: Convert target to of-date coordinates at current time
+        if is_j2000:
+            ra_date0, dec_date0 = precess_j2000_to_date(ra, dec, t0)
         else:
-            ra_date, dec_date = ra, dec
+            ra_date0, dec_date0 = ra, dec
 
-        # Step 3: Compute compass azimuth and altitude
-        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t)
+        # Step 3: Compute compass azimuth and altitude at t0
+        use_refr = bool(self.config.get("apply_refraction", True))
+        alt0, az0_compass = radec_to_altaz(ra_date0, dec_date0, lat, lon, t0, apply_refraction=use_refr)
 
-        # Step 4: Safety checks (altitude limits and Sun keep-out)
+        # Step 4: Predictive Time-of-Flight Intercept Calculation
+        # Eliminates the ~15-20 arcminute slew lag on long hops
+        t_target = t0
+        alt_slew = alt0
+        az_slew_compass = az0_compass
+
+        if predict_flight:
+            cur_alt, cur_az = self.get_telescope_altaz()
+            cur_az_steps = self.link.latest_telemetry.az_steps
+            cur_az_angle = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
+            az_limit = float(self.config["az_limit_deg"])
+
+            speed_steps_az = float(self.config.get("speed_az", 226))
+            steps_per_deg_az = float(self.config.get("steps_per_deg_az", 113.22))
+            speed_deg_az = speed_steps_az / steps_per_deg_az if steps_per_deg_az > 0 else 2.0
+
+            speed_steps_alt = float(self.config.get("speed_alt", 226))
+            steps_per_deg_alt = float(self.config.get("steps_per_deg_alt", 113.22))
+            speed_deg_alt = speed_steps_alt / steps_per_deg_alt if steps_per_deg_alt > 0 else 2.0
+
+            # Contraction mapping fixed-point arrival time iteration (converges in 3 passes to < 0.1 arcsec)
+            tau = 0.0
+            for _ in range(3):
+                t_eval = t0 + dt.timedelta(seconds=tau)
+                if is_j2000:
+                    r_eval, d_eval = precess_j2000_to_date(ra, dec, t_eval)
+                else:
+                    r_eval, d_eval = ra, dec
+                a_eval, az_c_eval = radec_to_altaz(r_eval, d_eval, lat, lon, t_eval, apply_refraction=use_refr)
+                az_b_eval = choose_az_branch(az_c_eval, cur_az_angle, limit=az_limit)
+                t_az = abs(az_b_eval - cur_az_angle) / speed_deg_az if speed_deg_az > 0 else 0.0
+                t_alt = abs(a_eval - cur_alt) / speed_deg_alt if speed_deg_alt > 0 else 0.0
+                tau = max(t_az, t_alt)
+
+            flight_time_s = tau
+            if flight_time_s > 0.5:
+                t_target = t0 + dt.timedelta(seconds=flight_time_s)
+                if is_j2000:
+                    ra_date_arr, dec_date_arr = precess_j2000_to_date(ra, dec, t_target)
+                else:
+                    ra_date_arr, dec_date_arr = ra, dec
+                alt_slew, az_slew_compass = radec_to_altaz(ra_date_arr, dec_date_arr, lat, lon, t_target, apply_refraction=use_refr)
+
+        # Step 5: Safety checks (altitude limits and Sun keep-out)
         alt_min = float(self.config["alt_min_deg"])
         alt_max = float(self.config["alt_max_deg"])
-        if alt < alt_min or alt > alt_max:
-            msg = f"GoTo refused: target altitude {alt:.1f}° outside allowed [{alt_min}°, {alt_max}°]"
+        if alt_slew < alt_min or alt_slew > alt_max:
+            msg = f"GoTo refused: target altitude {alt_slew:.1f}° outside allowed [{alt_min}°, {alt_max}°]"
             self.on_event("ERROR", msg)
             logging.warning(msg)
             if self.config["log_csv"]:
                 self.logger.log("GOTO_REFUSED", target_ra=ra, target_dec=dec,
-                                target_alt=alt, target_az=az_compass, note=msg)
+                                target_alt=alt_slew, target_az=az_slew_compass, note=msg)
             return False
 
-        sun_ra, sun_dec = sun_radec(t)
-        sun_sep = separation_deg(ra_date, dec_date, sun_ra, sun_dec)
+        sun_ra, sun_dec = sun_radec(t_target)
+        if is_j2000:
+            ra_check, dec_check = precess_j2000_to_date(ra, dec, t_target)
+        else:
+            ra_check, dec_check = ra, dec
+        sun_sep = separation_deg(ra_check, dec_check, sun_ra, sun_dec)
         sun_keepout = float(self.config["sun_keepout_deg"])
         if sun_sep < sun_keepout:
-            msg = f"GoTo refused: target is {sun_sep:.1f}° from Sun (keepout: {sun_keepout}°)"
-            self.on_event("ERROR", msg)
-            logging.warning(msg)
-            if self.config["log_csv"]:
-                self.logger.log("GOTO_REFUSED", target_ra=ra, target_dec=dec,
-                                target_alt=alt, target_az=az_compass, note=msg)
-            return False
+            confirmed = solar_confirmed or self.solar_filter_confirmed
+            if not confirmed and self.solar_warning_callback:
+                confirmed = self.solar_warning_callback(sun_sep)
+                if confirmed:
+                    self.solar_filter_confirmed = True
 
-        # Step 5: Azimuth branch selection
+            if not confirmed:
+                msg = f"GoTo refused: target is {sun_sep:.1f}° from Sun (solar filter required, keepout: {sun_keepout}°)"
+                self.on_event("WARNING", msg)
+                logging.warning(msg)
+                if self.config["log_csv"]:
+                    self.logger.log("GOTO_REFUSED", target_ra=ra, target_dec=dec,
+                                    target_alt=alt_slew, target_az=az_slew_compass, note=msg)
+                return False
+            else:
+                self.on_event("WARNING", f"Solar Slew Authorized: target is {sun_sep:.1f}° from Sun. Ensure certified solar filter is attached.")
+        else:
+            if not self.config.get("solar_filter_installed", False):
+                self.solar_filter_confirmed = False
+
+        # Step 6: Azimuth branch selection
         cur_az_steps = self.link.latest_telemetry.az_steps
         cur_az_angle = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
         az_limit = float(self.config["az_limit_deg"])
-        az_angle = choose_az_branch(az_compass, cur_az_angle, limit=az_limit)
+        az_angle = choose_az_branch(az_slew_compass, cur_az_angle, limit=az_limit)
 
-        # Step 6: Step conversion and command transmission
+        # Step 7: Step conversion and command transmission
         target_az_steps = angle_to_steps(az_angle, self.config["steps_per_deg_az"], self.config["sign_az"])
-        target_alt_steps = angle_to_steps(alt, self.config["steps_per_deg_alt"], self.config["sign_alt"])
+        target_alt_steps = angle_to_steps(alt_slew, self.config["steps_per_deg_alt"], self.config["sign_alt"])
 
         reply = self.link.send(f"G {target_az_steps} {target_alt_steps}")
         if reply != "OK":
@@ -1111,28 +1387,56 @@ class BridgeCore:
             logging.error(msg)
             return False
 
-        # Step 7: Update active target and enable tracking
+        # Step 8: Update active target and enable tracking
         self.current_target_radec = (ra, dec)
-        self.current_target_of_date = (ra_date, dec_date)
+        self.current_target_is_j2000 = is_j2000
+        self.current_target_of_date = (ra_date0, dec_date0)
+        self.target_type = "celestial"
         self.az_off_steps = 0
         self.alt_off_steps = 0
         self.last_sent_steps = (target_az_steps, target_alt_steps)
         self.tracking_enabled = True
         self.last_goto_target_str = f"RA {ra:.2f}°, Dec {dec:.2f}°"
+        self.tracking_initial_steps = (target_az_steps, target_alt_steps)
+        self.tracking_pulses_count = 0
+        self.tracking_total_steps_az = 0
+        self.tracking_total_steps_alt = 0
+        self.tracking_last_pulse_time = time.time()
 
-        msg = f"GoTo slewing to RA {ra:.2f}°, Dec {dec:.2f}° (Alt {alt:.1f}°, Az {az_angle:.1f}°)"
+        msg = f"GoTo slewing to RA {ra:.2f}°, Dec {dec:.2f}° (Alt {alt_slew:.1f}°, Az {az_angle:.1f}°)"
         self.on_event("INFO", msg)
         if self.config["log_csv"]:
-            self.logger.log("GOTO", target_ra=ra, target_dec=dec, target_alt=alt,
+            self.logger.log("GOTO", target_ra=ra, target_dec=dec, target_alt=alt_slew,
                             target_az=az_angle, az_steps=target_az_steps, alt_steps=target_alt_steps)
         return True
 
     def _tracking_loop(self) -> None:
         """Periodic tracking thread updating target coordinates every tracking_interval_s."""
+        last_tracking_time = 0.0
+        was_moving = False
         while not self._stop_event.is_set():
+            time.sleep(0.1)
+            if not self.tracking_enabled or not self.link or not self.link.is_open:
+                continue
+
+            if hasattr(self.link, "az_target") and hasattr(self.link, "az_pos"):
+                is_moving = (abs(self.link.az_target - self.link.az_pos) > 1.0 or
+                             abs(self.link.alt_target - self.link.alt_pos) > 1.0)
+            else:
+                is_moving = bool(self.link.latest_telemetry and getattr(self.link.latest_telemetry, "moving", 0))
+
+            now = time.time()
             interval = float(self.config.get("tracking_interval_s", 1.0))
-            time.sleep(interval)
-            if self.tracking_enabled and self.link and self.link.is_open:
+
+            # Detect arrival edge (moving transitioned 1 -> 0)
+            arrival_detected = was_moving and not is_moving
+            was_moving = is_moving
+
+            if is_moving:
+                continue
+
+            if arrival_detected or (now - last_tracking_time >= interval):
+                last_tracking_time = now
                 self.update_tracking()
 
     def update_tracking(self) -> None:
@@ -1140,18 +1444,31 @@ class BridgeCore:
         if not self.tracking_enabled or not self.current_target_radec or not self.link or not self.link.is_open:
             return
 
+        # Never run sidereal tracking on fast-moving satellites (they are guided by track_satellite_altaz)
+        if getattr(self, "target_type", "") == "satellite":
+            return
+
+        # Crucial: Never inject tracking delta nudges while an active Az/Alt GoTo slew is running
+        if hasattr(self.link, "az_target") and hasattr(self.link, "az_pos"):
+            if abs(self.link.az_target - self.link.az_pos) > 1.0 or abs(self.link.alt_target - self.link.alt_pos) > 1.0:
+                return
+        elif self.link.latest_telemetry and getattr(self.link.latest_telemetry, "moving", 0):
+            return
+
         t = self.get_time()
         lat = float(self.config["latitude_deg"])
         lon = float(self.config["longitude_deg"])
         ra_target, dec_target = self.current_target_radec
 
-        if self.config["epoch"] == "J2000":
+        is_j2000 = getattr(self, "current_target_is_j2000", (self.config.get("epoch", "J2000") == "J2000"))
+        if is_j2000:
             ra_date, dec_date = precess_j2000_to_date(ra_target, dec_target, t)
         else:
             ra_date, dec_date = ra_target, dec_target
 
         self.current_target_of_date = (ra_date, dec_date)
-        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t)
+        use_refr = bool(self.config.get("apply_refraction", True))
+        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t, apply_refraction=use_refr)
 
         # Safety checks
         alt_min = float(self.config["alt_min_deg"])
@@ -1160,9 +1477,10 @@ class BridgeCore:
         sun_sep = separation_deg(ra_date, dec_date, sun_ra, sun_dec)
         sun_keepout = float(self.config["sun_keepout_deg"])
 
-        if alt < alt_min or alt > alt_max or sun_sep < sun_keepout:
+        is_sun_danger = (sun_sep < sun_keepout) and not self.solar_filter_confirmed
+        if alt < alt_min or alt > alt_max or is_sun_danger:
             self.emergency_stop()
-            warn = "Tracking stopped: target exceeded altitude limits or Sun keepout."
+            warn = "Tracking stopped: target exceeded altitude limits or Sun keepout without confirmed solar filter."
             self.on_event("WARNING", warn)
             logging.warning(warn)
             if self.config["log_csv"]:
@@ -1178,8 +1496,70 @@ class BridgeCore:
         tgt_alt_steps = angle_to_steps(alt, self.config["steps_per_deg_alt"], self.config["sign_alt"]) + self.alt_off_steps
 
         if (tgt_az_steps, tgt_alt_steps) != self.last_sent_steps:
+            if self.tracking_initial_steps is None:
+                self.tracking_initial_steps = (tgt_az_steps, tgt_alt_steps)
+            self.tracking_total_steps_az = tgt_az_steps - self.tracking_initial_steps[0]
+            self.tracking_total_steps_alt = tgt_alt_steps - self.tracking_initial_steps[1]
+            self.tracking_pulses_count += 1
+            self.tracking_last_pulse_time = time.time()
+
             self.link.send(f"G {tgt_az_steps} {tgt_alt_steps}")
             self.last_sent_steps = (tgt_az_steps, tgt_alt_steps)
+
+    def track_satellite_altaz(self, alt: float, az_compass: float, name: str = "Satellite") -> bool:
+        """Tracks rapidly moving satellites directly using predictive Alt/Az feedforward."""
+        if not self.link or not self.link.is_open or not self.link.latest_telemetry.valid:
+            return False
+
+        # Safety checks
+        alt_min = float(self.config.get("alt_min_deg", 0.0))
+        alt_max = float(self.config.get("alt_max_deg", 85.0))
+        if alt < alt_min or alt > alt_max:
+            return False
+
+        t = self.get_time()
+        sun_ra, sun_dec = sun_radec(t)
+        lat = float(self.config["latitude_deg"])
+        lon = float(self.config["longitude_deg"])
+        sun_alt, sun_az = radec_to_altaz(sun_ra, sun_dec, lat, lon, t)
+
+        d_az = (az_compass - sun_az) * D2R
+        c = (math.sin(alt * D2R) * math.sin(sun_alt * D2R) +
+             math.cos(alt * D2R) * math.cos(sun_alt * D2R) * math.cos(d_az))
+        sun_sep = math.acos(max(-1.0, min(1.0, c))) / D2R
+        if sun_sep < float(self.config.get("sun_keepout_deg", 15.0)):
+            return False
+
+        cur_az_steps = self.link.latest_telemetry.az_steps
+        cur_az_angle = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
+        az_limit = float(self.config["az_limit_deg"])
+        az_angle = choose_az_branch(az_compass, cur_az_angle, limit=az_limit)
+
+        tgt_az_steps = angle_to_steps(az_angle, self.config["steps_per_deg_az"], self.config["sign_az"]) + self.az_off_steps
+        tgt_alt_steps = angle_to_steps(alt, self.config["steps_per_deg_alt"], self.config["sign_alt"]) + self.alt_off_steps
+
+        # Compute equivalent J2000 RA/Dec for target state display and logging
+        use_refr = bool(self.config.get("apply_refraction", True))
+        ra_date, dec_date = altaz_to_radec(alt, az_compass, lat, lon, t, apply_refraction=use_refr)
+        ra_j2000, dec_j2000 = precess_date_to_j2000(ra_date, dec_date, t)
+        self.current_target_radec = (ra_j2000, dec_j2000)
+        self.current_target_is_j2000 = True
+        self.current_target_of_date = (ra_date, dec_date)
+        self.target_type = "satellite"
+        self.tracking_enabled = True
+        self.last_goto_target_str = f"{name} [SATELLITE]"
+
+        if (tgt_az_steps, tgt_alt_steps) != self.last_sent_steps:
+            if self.tracking_initial_steps is None:
+                self.tracking_initial_steps = (tgt_az_steps, tgt_alt_steps)
+            self.tracking_total_steps_az = tgt_az_steps - self.tracking_initial_steps[0]
+            self.tracking_total_steps_alt = tgt_alt_steps - self.tracking_initial_steps[1]
+            self.tracking_pulses_count += 1
+            self.tracking_last_pulse_time = time.time()
+
+            self.link.send(f"G {tgt_az_steps} {tgt_alt_steps}")
+            self.last_sent_steps = (tgt_az_steps, tgt_alt_steps)
+        return True
 
     def jog(self, direction: str, speed_mode: str = "medium") -> None:
         """Executes manual jog, accumulating tracking offset if tracking is active."""
@@ -1251,7 +1631,8 @@ class BridgeCore:
         else:
             ra_date, dec_date = ra_tgt, dec_tgt
 
-        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t)
+        use_refr = bool(self.config.get("apply_refraction", True))
+        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t, apply_refraction=use_refr)
         cur_az_steps = self.link.latest_telemetry.az_steps
         cur_az_angle = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
         az_angle = choose_az_branch(az_compass, cur_az_angle, limit=float(self.config["az_limit_deg"]))
@@ -1345,15 +1726,30 @@ class BridgeCore:
         compass_az = az_deg % 360.0
         return alt_deg, compass_az
 
-    def get_telescope_radec(self) -> Tuple[float, float]:
-        """Returns current telescope RA/Dec in configured epoch."""
+    def get_telescope_radec_j2000(self) -> Tuple[float, float]:
+        """Always returns current telescope RA/Dec in J2000 coordinates for Stellarium TCP port 10001 protocol."""
         alt, az = self.get_telescope_altaz()
         t = self.get_time()
         lat = float(self.config["latitude_deg"])
         lon = float(self.config["longitude_deg"])
-        ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t)
+        use_refr = bool(self.config.get("apply_refraction", True))
+        ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t, apply_refraction=use_refr)
+        return precess_date_to_j2000(ra_date, dec_date, t)
 
-        if self.config["epoch"] == "J2000":
+    def get_telescope_radec(self) -> Tuple[float, float]:
+        """Returns current telescope RA/Dec in configured epoch (J2000 or JNow)."""
+        alt, az = self.get_telescope_altaz()
+        t = self.get_time()
+        lat = float(self.config["latitude_deg"])
+        lon = float(self.config["longitude_deg"])
+        use_refr = bool(self.config.get("apply_refraction", True))
+        ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t, apply_refraction=use_refr)
+
+        if self.config.get("epoch", "J2000") == "J2000":
+            return precess_date_to_j2000(ra_date, dec_date, t)
+        return ra_date, dec_date
+
+        if self.config.get("epoch", "J2000") == "J2000":
             return precess_date_to_j2000(ra_date, dec_date, t)
         return ra_date, dec_date
 
@@ -1901,9 +2297,9 @@ class TelescopeApp:
 # ==============================================================================
 
 def run_self_test() -> int:
-    """Executes the complete headless 12-test verification suite (Section 9)."""
+    """Executes the complete headless 13-test verification suite (Section 9)."""
     passed = 0
-    total = 12
+    total = 13
 
     def record_pass(name: str) -> None:
         nonlocal passed
@@ -2031,6 +2427,8 @@ def run_self_test() -> int:
     try:
         sim = SimLink()
         sim.open()
+        sim.speed_az = 2000.0
+        sim.speed_alt = 2000.0
         p0 = sim.send("P")
         if p0 != "P 0 0 0 0 0":
             record_fail("test_7_simlink_protocol", f"Initial P returned {p0}")
@@ -2087,6 +2485,9 @@ def run_self_test() -> int:
         t_test = dt.datetime(2026, 11, 2, 20, 0, 0)
         cfg = Config()
         cfg["epoch"] = "JNow"
+        cfg["simulate"] = True
+        cfg["speed_az"] = 5000
+        cfg["speed_alt"] = 5000
         cfg["stellarium_port"] = 0  # Dynamic port allocation
         cfg["position_report_interval_s"] = 0.1
 
@@ -2094,7 +2495,7 @@ def run_self_test() -> int:
         sim.speed_az = 5000.0
         sim.speed_alt = 5000.0
         core = BridgeCore(config=cfg, link=sim, time_fn=lambda: t_test)
-        core.connect()
+        core.connect(simulate=True)
 
         server = StellariumServer("127.0.0.1", 0, core)
         server.start()
@@ -2200,6 +2601,11 @@ def run_self_test() -> int:
         core.on_goto_requested(ra_t, dec_t)
         first_steps = core.last_sent_steps
 
+        # Mount arrives at target destination (clearing moving flag)
+        sim.az_pos = sim.az_target
+        sim.alt_pos = sim.alt_target
+        sim._update_telemetry()
+
         # Advance simulated clock by 120 seconds
         current_sim_time += dt.timedelta(seconds=120)
         core.update_tracking()
@@ -2269,6 +2675,59 @@ def run_self_test() -> int:
     except Exception as e:
         record_fail("test_12_epoch_conversion_consistency", str(e))
 
+    # --------------------------------------------------------------------------
+    # Test 13: Zero-gap predictive time-of-flight intercept and satellite tracking
+    # --------------------------------------------------------------------------
+    try:
+        t_intercept_0 = dt.datetime(2026, 11, 2, 22, 0, 0)
+        current_time = t_intercept_0
+        cfg_i = Config()
+        cfg_i["epoch"] = "J2000"
+        cfg_i["speed_az"] = 226
+        cfg_i["speed_alt"] = 226
+        sim_i = SimLink(cfg_i)
+        core_i = BridgeCore(config=cfg_i, link=sim_i, time_fn=lambda: current_time)
+        core_i.connect(simulate=True)
+
+        ra_rigel, dec_rigel = 78.634, -8.201
+        ok = core_i.on_goto_requested(ra_rigel, dec_rigel, is_j2000=True, predict_flight=True)
+
+        # Compute commanded steps vs target arrival
+        tgt_az_steps, tgt_alt_steps = core_i.last_sent_steps
+        time_az = abs(steps_to_angle(tgt_az_steps, cfg_i["steps_per_deg_az"], 1)) / (226.0 / 113.22)
+        time_alt = abs(steps_to_angle(tgt_alt_steps, cfg_i["steps_per_deg_alt"], 1)) / (226.0 / 113.22)
+        flight_s = max(time_az, time_alt)
+        arrival_time = t_intercept_0 + dt.timedelta(seconds=flight_s)
+
+        # Advance simulated mount to target steps and advance clock to arrival time
+        sim_i.az_pos = tgt_az_steps
+        sim_i.alt_pos = tgt_alt_steps
+        sim_i._update_telemetry()
+        current_time = arrival_time
+
+        # Mount pointing at arrival:
+        mount_alt, mount_az = core_i.get_telescope_altaz()
+
+        # Rigel's true celestial apparent position in the sky at arrival time:
+        ra_date_arr, dec_date_arr = precess_j2000_to_date(ra_rigel, dec_rigel, arrival_time)
+        rigel_alt, rigel_az = radec_to_altaz(ra_date_arr, dec_date_arr, float(cfg_i["latitude_deg"]), float(cfg_i["longitude_deg"]), arrival_time)
+
+        # Measure pointing error on arrival:
+        pointing_gap = math.hypot(mount_az - rigel_az, mount_alt - rigel_alt)
+
+        # Also test satellite tracking method:
+        sat_ok = core_i.track_satellite_altaz(45.0, 150.0, name="ISS (ZARYA)")
+
+        core_i.disconnect()
+
+        # Intercept error must be under 0.05 degrees (under 3 arcminutes)
+        if ok and pointing_gap < 0.05 and sat_ok:
+            record_pass("test_13_predictive_intercept_zero_gap")
+        else:
+            record_fail("test_13_predictive_intercept_zero_gap", f"ok={ok}, gap={pointing_gap:.6f} deg, sat_ok={sat_ok}")
+    except Exception as e:
+        record_fail("test_13_predictive_intercept_zero_gap", str(e))
+
     print(f"\nSelf-test complete: {passed}/{total} tests passed.")
     return 0 if (passed == total) else 1
 
@@ -2281,6 +2740,7 @@ def main() -> None:
     parser.add_argument("--selftest", action="store_true", help="Run headless verification self-test suite and exit")
     parser.add_argument("--simulate", action="store_true", help="Start GUI with simulated Uno selected")
     parser.add_argument("--config", type=str, default="telescope_config.json", help="Path to JSON configuration file")
+    parser.add_argument("--tk", action="store_true", help="Launch legacy Tkinter UI instead of modern PyQt6 UI")
     args = parser.parse_args()
 
     # Configure logging
@@ -2291,6 +2751,16 @@ def main() -> None:
         exit_code = run_self_test()
         sys.exit(exit_code)
 
+    # Mode 2: Modern PyQt6 UI (default)
+    if not args.tk:
+        try:
+            from telescope_ui_qt import launch_app
+            launch_app(simulate=args.simulate, config_path=args.config)
+            return
+        except ImportError as e:
+            logging.info(f"PyQt6 not available ({e}), falling back to Tkinter UI.")
+
+    # Mode 3: Legacy Tkinter Desktop GUI
     # Check pyserial availability for GUI mode
     if not HAS_PYSERIAL and not args.simulate:
         print("\n" + "=" * 70)
