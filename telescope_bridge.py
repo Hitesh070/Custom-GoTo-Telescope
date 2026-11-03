@@ -57,25 +57,32 @@ def lst_deg(jd_or_t, lon_deg):                # lon: east positive; accepts floa
         jd = float(jd_or_t)
     return (280.46061837 + 360.98564736629 * (jd - 2451545.0) + lon_deg) % 360.0
 
-def true_to_apparent_alt(h_deg: float) -> float:
-    """Bennett (1982) formula for atmospheric refraction (Meeus standard)."""
+def atmospheric_refraction_arcmin(h_deg: float, temp_c: float = 15.0, pressure_mbar: float = 1013.25) -> float:
+    """Computes atmospheric refraction in arcminutes using Saemundsson (1986) with Bennett T/P scaling."""
+    if h_deg < -1.0:
+        return 0.0
+    r0 = 1.02 / math.tan(math.radians(h_deg + 10.3 / (h_deg + 5.11)))
+    tp_scale = (pressure_mbar / 1010.0) * (283.15 / (273.15 + temp_c))
+    return r0 * tp_scale
+
+def true_to_apparent_alt(h_deg: float, temp_c: float = 15.0, pressure_mbar: float = 1013.25) -> float:
+    """Bennett (1982) / Saemundsson formula for atmospheric refraction (Meeus standard)."""
     if h_deg < -1.0:
         return h_deg
-    R_arcmin = 1.02 / math.tan(math.radians(h_deg + 10.3 / (h_deg + 5.11)))
-    return h_deg + R_arcmin / 60.0
+    return h_deg + atmospheric_refraction_arcmin(h_deg, temp_c, pressure_mbar) / 60.0
 
-def apparent_to_true_alt(h_app_deg: float) -> float:
-    """Exact inverse of Bennett formula by 4-pass fixed point iteration (<0.0001 arcsec error)."""
+def apparent_to_true_alt(h_app_deg: float, temp_c: float = 15.0, pressure_mbar: float = 1013.25) -> float:
+    """Exact inverse of Bennett refraction formula by 5-pass fixed point iteration (<0.0001 arcsec error)."""
     if h_app_deg < -1.0:
         return h_app_deg
     h_true = h_app_deg
-    for _ in range(4):
-        r = 1.02 / math.tan(math.radians(h_true + 10.3 / (h_true + 5.11)))
+    for _ in range(5):
+        r = atmospheric_refraction_arcmin(h_true, temp_c, pressure_mbar)
         h_app_calc = h_true + r / 60.0
         h_true = h_true + (h_app_deg - h_app_calc)
     return h_true
 
-def radec_to_altaz(ra, dec, lat, lon, t, apply_refraction=False):        # all degrees; az from North, East = 90
+def radec_to_altaz(ra, dec, lat, lon, t, apply_refraction=False, temp_c=15.0, pressure_mbar=1013.25):        # all degrees; az from North, East = 90
     ha = (lst_deg(julian_date(t), lon) - ra) * D2R
     d, p = dec * D2R, lat * D2R
     sin_alt = math.sin(d) * math.sin(p) + math.cos(d) * math.cos(p) * math.cos(ha)
@@ -84,11 +91,11 @@ def radec_to_altaz(ra, dec, lat, lon, t, apply_refraction=False):        # all d
                     math.cos(p) * math.sin(d) - math.sin(p) * math.cos(d) * math.cos(ha))
     alt_deg = alt / D2R
     if apply_refraction:
-        alt_deg = true_to_apparent_alt(alt_deg)
+        alt_deg = true_to_apparent_alt(alt_deg, temp_c, pressure_mbar)
     return alt_deg, (az / D2R) % 360.0
 
-def altaz_to_radec(alt, az, lat, lon, t, apply_refraction=False):        # needed for the position reported to Stellarium
-    alt_geom = apparent_to_true_alt(alt) if apply_refraction else alt
+def altaz_to_radec(alt, az, lat, lon, t, apply_refraction=False, temp_c=15.0, pressure_mbar=1013.25):        # needed for the position reported to Stellarium
+    alt_geom = apparent_to_true_alt(alt, temp_c, pressure_mbar) if apply_refraction else alt
     a, z, p = alt_geom * D2R, az * D2R, lat * D2R
     sin_dec = math.sin(a) * math.sin(p) + math.cos(a) * math.cos(p) * math.cos(z)
     dec = math.asin(max(-1.0, min(1.0, sin_dec)))
@@ -157,6 +164,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "longitude_deg": 80.15,
     "epoch": "J2000",
     "apply_refraction": True,
+    "site_temperature_c": 15.0,
+    "site_pressure_mbar": 1013.25,
+    "tracking_rate": "Sidereal",
     "serial_port": "",
     "baud": 115200,
     "simulate": False,
@@ -248,6 +258,12 @@ class Config:
             errors.append("Longitude must be between -180 and +180 degrees.")
         if self["epoch"] not in ("JNow", "J2000"):
             errors.append("Epoch must be either 'JNow' or 'J2000'.")
+        if "site_temperature_c" in self.data and not (-50.0 <= float(self["site_temperature_c"]) <= 60.0):
+            errors.append("Site temperature must be between -50°C and +60°C.")
+        if "site_pressure_mbar" in self.data and not (500.0 <= float(self["site_pressure_mbar"]) <= 1100.0):
+            errors.append("Site pressure must be between 500 and 1100 mbar.")
+        if "tracking_rate" in self.data and self["tracking_rate"] not in ("Sidereal", "Lunar", "Solar", "King"):
+            errors.append("Tracking rate must be one of: 'Sidereal', 'Lunar', 'Solar', 'King'.")
         if self["baud"] <= 0:
             errors.append("Baud rate must be positive.")
         if not (1024 <= self["stellarium_port"] <= 65535):
@@ -1194,6 +1210,8 @@ class BridgeCore:
         self.last_goto_target_str: str = "None"
         self.target_name: str = "Target"
         self.target_type: str = "star"
+        self.tracking_rate: str = str(self.config.get("tracking_rate", "Sidereal"))
+        self.tracking_start_time: dt.datetime = self.time_fn()
 
         # Tracking telemetry and activity metrics
         self.tracking_pulses_count: int = 0
@@ -1216,6 +1234,80 @@ class BridgeCore:
     def get_time(self) -> dt.datetime:
         """Returns current naive UTC datetime."""
         return self.time_fn()
+
+    def get_site_env(self) -> Tuple[float, float]:
+        """Returns (temperature_c, pressure_mbar) from configuration."""
+        try:
+            temp_c = float(self.config.get("site_temperature_c", 15.0))
+        except (ValueError, TypeError):
+            temp_c = 15.0
+        try:
+            press_mb = float(self.config.get("site_pressure_mbar", 1013.25))
+        except (ValueError, TypeError):
+            press_mb = 1013.25
+        return temp_c, press_mb
+
+    def set_tracking_rate(self, rate_name: str) -> None:
+        """Selects astronomical tracking rate: 'Sidereal', 'Lunar', 'Solar', or 'King'."""
+        valid_rates = {"Sidereal", "Lunar", "Solar", "King"}
+        norm_rate = rate_name.capitalize()
+        if norm_rate not in valid_rates:
+            self.on_event("WARNING", f"Unknown tracking rate '{rate_name}'. Available: {list(valid_rates)}")
+            return
+        self.tracking_rate = norm_rate
+        self.config["tracking_rate"] = norm_rate
+        self.tracking_start_time = self.get_time()
+        self.on_event("INFO", f"Tracking rate switched to {norm_rate.upper()}")
+
+    def get_tracking_rate_factor(self, alt_deg: float = 45.0, az_deg: float = 180.0) -> float:
+        """Returns tracking rate velocity multiplier relative to sidereal rate (1.0)."""
+        rate = getattr(self, "tracking_rate", "Sidereal")
+        if rate == "Lunar":
+            # Moon relative sidereal drift is ~0.549°/hr -> factor 14.492 / 15.041
+            return 14.492 / 15.041068
+        elif rate == "Solar":
+            # Mean solar rate: 15.000000"/s vs sidereal 15.041068"/s
+            return 15.000000 / 15.041068
+        elif rate == "King":
+            # King refraction-adjusted rate: accounts for atmospheric refraction gradient with altitude
+            lat_deg = float(self.config.get("latitude_deg", 12.84))
+            site_t, site_p = self.get_site_env()
+            h = max(1.0, min(89.0, alt_deg))
+            dh = 0.2
+            r1 = atmospheric_refraction_arcmin(h - dh, site_t, site_p)
+            r2 = atmospheric_refraction_arcmin(h + dh, site_t, site_p)
+            dr_dh = (r2 - r1) / (2.0 * dh * 60.0)
+            cos_alt = max(0.05, math.cos(math.radians(h)))
+            factor = 1.0 - dr_dh * math.cos(math.radians(lat_deg)) * math.cos(math.radians(az_deg)) / cos_alt
+            return max(0.8, min(1.2, factor))
+        else:
+            return 1.0
+
+    def get_cable_wrap(self) -> Tuple[float, float]:
+        """Returns (cable_wrap_degrees, cable_wrap_turns) from current logical azimuth position."""
+        if not self.link or not self.link.latest_telemetry.valid:
+            return 0.0, 0.0
+        cur_az_steps = self.link.latest_telemetry.az_steps
+        az_deg = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
+        turns = az_deg / 360.0
+        return az_deg, turns
+
+    def unwind_cable(self) -> bool:
+        """Slews azimuth axis to 0° (True North) to safely untangle cables."""
+        if not self.link or not self.link.is_open or not self.link.latest_telemetry.valid:
+            self.on_event("WARNING", "Unwind cable ignored: Telescope not connected")
+            return False
+
+        az_steps = angle_to_steps(0.0, self.config["steps_per_deg_az"], self.config["sign_az"])
+        alt_steps = self.link.latest_telemetry.alt_steps
+        self.tracking_enabled = False
+        reply = self.link.send(f"G {az_steps} {alt_steps}")
+        if reply == "OK":
+            self.on_event("INFO", "Unwinding cable: Slewing Azimuth to 0° (True North)")
+            return True
+        else:
+            self.on_event("ERROR", f"Unwind cable failed: {reply}")
+            return False
 
     def start_tracking_thread(self) -> None:
         self._stop_event.clear()
@@ -1344,7 +1436,8 @@ class BridgeCore:
 
         # Step 3: Compute compass azimuth and altitude at t0
         use_refr = bool(self.config.get("apply_refraction", True))
-        alt0, az0_compass = radec_to_altaz(ra_date0, dec_date0, lat, lon, t0, apply_refraction=use_refr)
+        site_t, site_p = self.get_site_env()
+        alt0, az0_compass = radec_to_altaz(ra_date0, dec_date0, lat, lon, t0, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
 
         # Step 4: Predictive Time-of-Flight Intercept Calculation
         # Eliminates the ~15-20 arcminute slew lag on long hops
@@ -1377,7 +1470,7 @@ class BridgeCore:
                     r_eval, d_eval = precess_j2000_to_date(ra, dec, t_eval)
                 else:
                     r_eval, d_eval = ra, dec
-                a_eval, az_c_eval = radec_to_altaz(r_eval, d_eval, lat, lon, t_eval, apply_refraction=use_refr)
+                a_eval, az_c_eval = radec_to_altaz(r_eval, d_eval, lat, lon, t_eval, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
                 az_b_eval = choose_az_branch(az_c_eval, cur_az_angle, limit=az_limit)
                 t_az = (abs(az_b_eval - cur_az_angle) / speed_deg_az + ramp_az) if (speed_deg_az > 0 and abs(az_b_eval - cur_az_angle) > 0.01) else 0.0
                 t_alt = (abs(a_eval - cur_alt) / speed_deg_alt + ramp_alt) if (speed_deg_alt > 0 and abs(a_eval - cur_alt) > 0.01) else 0.0
@@ -1390,9 +1483,9 @@ class BridgeCore:
                     ra_date_arr, dec_date_arr = precess_j2000_to_date(ra, dec, t_target)
                 else:
                     ra_date_arr, dec_date_arr = ra, dec
-                alt_slew, az_slew_compass = radec_to_altaz(ra_date_arr, dec_date_arr, lat, lon, t_target, apply_refraction=use_refr)
+                alt_slew, az_slew_compass = radec_to_altaz(ra_date_arr, dec_date_arr, lat, lon, t_target, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
 
-        # Step 5: Safety checks (altitude limits and Sun keep-out)
+        # Step 5: Safety checks (altitude limits, local horizon mask, and Sun keep-out)
         alt_min = float(self.config["alt_min_deg"])
         alt_max = float(self.config["alt_max_deg"])
         if alt_slew < alt_min or alt_slew > alt_max:
@@ -1427,7 +1520,7 @@ class BridgeCore:
             sample_alt = cur_alt + frac * (alt_slew - cur_alt)
             sample_az = cur_az_angle + frac * (az_angle - cur_az_angle)
             s_ra_t, s_dec_t = sun_radec(t_sample)
-            s_alt_t, s_az_t = radec_to_altaz(s_ra_t, s_dec_t, lat, lon, t_sample, apply_refraction=use_refr)
+            s_alt_t, s_az_t = radec_to_altaz(s_ra_t, s_dec_t, lat, lon, t_sample, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
             d_az = (sample_az - s_az_t) * D2R
             cos_sep = (math.sin(sample_alt * D2R) * math.sin(s_alt_t * D2R) +
                        math.cos(sample_alt * D2R) * math.cos(s_alt_t * D2R) * math.cos(d_az))
@@ -1486,13 +1579,18 @@ class BridgeCore:
         self.last_goto_target_str = target_name or f"RA {ra:.2f}°, Dec {dec:.2f}°"
         if target_name:
             self.target_name = target_name
+        self.tracking_start_time = t0
         self.tracking_initial_steps = (target_az_steps, target_alt_steps)
         self.tracking_pulses_count = 0
         self.tracking_total_steps_az = 0
         self.tracking_total_steps_alt = 0
         self.tracking_last_pulse_time = time.time()
 
-        msg = f"GoTo slewing to RA {ra:.2f}°, Dec {dec:.2f}° (Alt {alt_slew:.1f}°, Az {az_angle:.1f}°)"
+        refr_str = ""
+        if use_refr and alt_slew > -1.0:
+            r_arcmin = atmospheric_refraction_arcmin(alt_slew, site_t, site_p)
+            refr_str = f" [Refr: +{r_arcmin:.1f}']"
+        msg = f"GoTo slewing to RA {ra:.2f}°, Dec {dec:.2f}° (Alt {alt_slew:.1f}°{refr_str}, Az {az_angle:.1f}°)"
         self.on_event("INFO", msg)
         if self.config["log_csv"]:
             self.logger.log("GOTO", target_ra=ra, target_dec=dec, target_alt=alt_slew,
@@ -1560,7 +1658,17 @@ class BridgeCore:
 
         self.current_target_of_date = (ra_date, dec_date)
         use_refr = bool(self.config.get("apply_refraction", True))
-        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t, apply_refraction=use_refr)
+        site_t, site_p = self.get_site_env()
+
+        # Smarter Tracking Rate adjustment (Lunar, Solar, King)
+        rate_factor = self.get_tracking_rate_factor(alt_deg=45.0, az_deg=180.0)
+        if abs(rate_factor - 1.0) > 1e-4:
+            t_start = getattr(self, "tracking_start_time", t)
+            dt_elapsed = (t - t_start).total_seconds()
+            t_eff = t_start + dt.timedelta(seconds=dt_elapsed * rate_factor)
+            alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t_eff, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
+        else:
+            alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
 
         # Safety checks
         alt_min = float(self.config["alt_min_deg"])
@@ -1729,7 +1837,8 @@ class BridgeCore:
             ra_date, dec_date = ra_tgt, dec_tgt
 
         use_refr = bool(self.config.get("apply_refraction", True))
-        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t, apply_refraction=use_refr)
+        site_t, site_p = self.get_site_env()
+        alt, az_compass = radec_to_altaz(ra_date, dec_date, lat, lon, t, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
         cur_az_steps = self.link.latest_telemetry.az_steps
         cur_az_angle = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
         az_angle = choose_az_branch(az_compass, cur_az_angle, limit=float(self.config["az_limit_deg"]))
@@ -1889,7 +1998,8 @@ class BridgeCore:
         lat = float(self.config["latitude_deg"])
         lon = float(self.config["longitude_deg"])
         use_refr = bool(self.config.get("apply_refraction", True))
-        ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t, apply_refraction=use_refr)
+        site_t, site_p = self.get_site_env()
+        ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
         return precess_date_to_j2000(ra_date, dec_date, t)
 
     def get_telescope_radec(self) -> Tuple[float, float]:
@@ -1899,7 +2009,8 @@ class BridgeCore:
         lat = float(self.config["latitude_deg"])
         lon = float(self.config["longitude_deg"])
         use_refr = bool(self.config.get("apply_refraction", True))
-        ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t, apply_refraction=use_refr)
+        site_t, site_p = self.get_site_env()
+        ra_date, dec_date = altaz_to_radec(alt, az, lat, lon, t, apply_refraction=use_refr, temp_c=site_t, pressure_mbar=site_p)
 
         if self.config.get("epoch", "J2000") == "J2000":
             return precess_date_to_j2000(ra_date, dec_date, t)
@@ -2247,7 +2358,13 @@ class TelescopeApp:
         # Coordinates
         alt, az = self.core.get_telescope_altaz()
         ra, dec = self.core.get_telescope_radec()
-        self.lbl_altaz.configure(text=f"Mount Alt/Az: {alt:.2f}° / {az:.2f}°")
+        use_refr = bool(self.core.config.get("apply_refraction", True))
+        if use_refr and alt > -1.0:
+            site_t, site_p = self.core.get_site_env()
+            r_arcmin = atmospheric_refraction_arcmin(alt, site_t, site_p)
+            self.lbl_altaz.configure(text=f"Mount Alt/Az: {alt:.2f}° / {az:.2f}° (Refr +{r_arcmin:.1f}')")
+        else:
+            self.lbl_altaz.configure(text=f"Mount Alt/Az: {alt:.2f}° / {az:.2f}° (Geometric)")
         epoch_str = self.core.config.get("epoch", "JNow")
         self.lbl_radec.configure(text=f"Mount RA/Dec ({epoch_str}): {ra:.2f}° / {dec:.2f}°")
 
@@ -2373,8 +2490,13 @@ class TelescopeApp:
         add_entry("sun_keepout_deg", "Sun Keepout (°):", cfg["sun_keepout_deg"])
         add_entry("tracking_interval_s", "Tracking Interval (s):", cfg["tracking_interval_s"])
         add_entry("stellarium_port", "Stellarium Port:", cfg["stellarium_port"])
+        add_entry("site_temperature_c", "Site Temperature (°C):", cfg.get("site_temperature_c", 15.0))
+        add_entry("site_pressure_mbar", "Barometric Pressure (mbar):", cfg.get("site_pressure_mbar", 1013.25))
 
         # Checkboxes
+        refr_var = tk.BooleanVar(value=bool(cfg.get("apply_refraction", True)))
+        ttk.Checkbutton(form_frame, text="Enable Atmospheric Refraction Correction", variable=refr_var).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=4)
+        row += 1
         az_home_var = tk.BooleanVar(value=bool(cfg.get("az_home_switch", False)))
         ttk.Checkbutton(form_frame, text="Azimuth Home Switch Installed", variable=az_home_var).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=4)
         row += 1
@@ -2407,6 +2529,9 @@ class TelescopeApp:
                 cfg["sun_keepout_deg"] = float(entries["sun_keepout_deg"].get())
                 cfg["tracking_interval_s"] = float(entries["tracking_interval_s"].get())
                 cfg["stellarium_port"] = int(entries["stellarium_port"].get())
+                cfg["site_temperature_c"] = float(entries["site_temperature_c"].get())
+                cfg["site_pressure_mbar"] = float(entries["site_pressure_mbar"].get())
+                cfg["apply_refraction"] = refr_var.get()
                 cfg["az_home_switch"] = az_home_var.get()
                 cfg["log_csv"] = csv_log_var.get()
 
@@ -2451,7 +2576,7 @@ class TelescopeApp:
 def run_self_test() -> int:
     """Executes the complete headless 13-test verification suite (Section 9)."""
     passed = 0
-    total = 13
+    total = 16
 
     def record_pass(name: str) -> None:
         nonlocal passed
@@ -2879,6 +3004,105 @@ def run_self_test() -> int:
             record_fail("test_13_predictive_intercept_zero_gap", f"ok={ok}, gap={pointing_gap:.6f} deg, sat_ok={sat_ok}")
     except Exception as e:
         record_fail("test_13_predictive_intercept_zero_gap", str(e))
+
+    # --------------------------------------------------------------------------
+    # Test 14: Atmospheric Refraction Correction & Inversion Consistency
+    # --------------------------------------------------------------------------
+    try:
+        # Horizon refraction test: ~28.9 to 35 arcmin
+        r_0 = atmospheric_refraction_arcmin(0.0, temp_c=15.0, pressure_mbar=1013.25)
+        r_45 = atmospheric_refraction_arcmin(45.0, temp_c=15.0, pressure_mbar=1013.25)
+        r_90 = atmospheric_refraction_arcmin(90.0, temp_c=15.0, pressure_mbar=1013.25)
+
+        horizon_ok = (25.0 <= r_0 <= 36.0)
+        mid_ok = (0.8 <= r_45 <= 1.3)
+        zenith_ok = (r_90 <= 0.05)
+
+        # Temperature & Pressure scaling
+        r_cold = atmospheric_refraction_arcmin(10.0, temp_c=-10.0, pressure_mbar=1013.25)
+        r_hot = atmospheric_refraction_arcmin(10.0, temp_c=30.0, pressure_mbar=1013.25)
+        tp_ok = (r_cold > r_hot)
+
+        # Round-trip accuracy across altitudes from 0° to 85°
+        roundtrip_ok = True
+        for h in (0.0, 5.0, 15.0, 30.0, 45.0, 75.0, 85.0):
+            h_app = true_to_apparent_alt(h, temp_c=15.0, pressure_mbar=1013.25)
+            h_geom = apparent_to_true_alt(h_app, temp_c=15.0, pressure_mbar=1013.25)
+            if abs(h - h_geom) > 0.001:
+                roundtrip_ok = False
+                break
+
+        if horizon_ok and mid_ok and zenith_ok and tp_ok and roundtrip_ok:
+            record_pass("test_14_atmospheric_refraction_correction")
+        else:
+            record_fail("test_14_atmospheric_refraction_correction",
+                        f"horizon_ok={horizon_ok}, mid_ok={mid_ok}, zenith_ok={zenith_ok}, tp_ok={tp_ok}, roundtrip_ok={roundtrip_ok}")
+    except Exception as e:
+        record_fail("test_14_atmospheric_refraction_correction", str(e))
+
+    # --------------------------------------------------------------------------
+    # Test 15: Smarter Kinematics - Multi-Rate Tracking (Sidereal, Lunar, Solar, King)
+    # --------------------------------------------------------------------------
+    try:
+        cfg = Config()
+        core = BridgeCore(config=cfg)
+
+        core.set_tracking_rate("Sidereal")
+        f_sid = core.get_tracking_rate_factor()
+
+        core.set_tracking_rate("Lunar")
+        f_lun = core.get_tracking_rate_factor()
+
+        core.set_tracking_rate("Solar")
+        f_sol = core.get_tracking_rate_factor()
+
+        core.set_tracking_rate("King")
+        f_king_low = core.get_tracking_rate_factor(alt_deg=10.0, az_deg=180.0)
+        f_king_zen = core.get_tracking_rate_factor(alt_deg=85.0, az_deg=180.0)
+
+        sid_ok = abs(f_sid - 1.0) < 1e-4
+        lun_ok = 0.95 <= f_lun <= 0.98
+        sol_ok = 0.995 <= f_sol <= 0.999
+        king_ok = (f_king_low != 1.0) and (abs(f_king_zen - 1.0) < 0.05)
+
+        if sid_ok and lun_ok and sol_ok and king_ok:
+            record_pass("test_15_kinematics_tracking_rates")
+        else:
+            record_fail("test_15_kinematics_tracking_rates",
+                        f"sid={f_sid}, lun={f_lun}, sol={f_sol}, king_low={f_king_low}, king_zen={f_king_zen}")
+    except Exception as e:
+        record_fail("test_15_kinematics_tracking_rates", str(e))
+
+    # --------------------------------------------------------------------------
+    # Test 16: Cable-Wrap Prevention & Unwind Slew
+    # --------------------------------------------------------------------------
+    try:
+        cfg = Config()
+        sim = SimLink(cfg)
+        core = BridgeCore(config=cfg, link=sim)
+        core.connect(simulate=True)
+
+        sim.az_pos = angle_to_steps(180.0, cfg["steps_per_deg_az"], cfg["sign_az"])
+        sim._update_telemetry()
+        wrap_deg, wrap_turns = core.get_cable_wrap()
+
+        wrap_calc_ok = (abs(wrap_deg - 180.0) < 0.1) and (abs(wrap_turns - 0.5) < 0.01)
+
+        unwound = core.unwind_cable()
+        sim.az_pos = sim.az_target
+        sim._update_telemetry()
+        unwound_deg, _ = core.get_cable_wrap()
+        unwind_ok = unwound and (abs(unwound_deg) < 0.1)
+
+        core.disconnect()
+
+        if wrap_calc_ok and unwind_ok:
+            record_pass("test_16_cable_wrap_and_unwind")
+        else:
+            record_fail("test_16_cable_wrap_and_unwind",
+                        f"wrap_calc_ok={wrap_calc_ok}, unwind_ok={unwind_ok}")
+    except Exception as e:
+        record_fail("test_16_cable_wrap_and_unwind", str(e))
 
     print(f"\nSelf-test complete: {passed}/{total} tests passed.")
     return 0 if (passed == total) else 1

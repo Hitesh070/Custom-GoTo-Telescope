@@ -770,6 +770,8 @@ class HelpGuideDialog(QDialog):
         <tr><td><b>Direct Go To Step</b></td><td>--</td><td>Allows entering an exact step coordinate (e.g. 350) and clicking <b>Go</b> to return instantly to a known parfocal eyepiece position.</td></tr>
         <tr><td><b>Zero Focus</b></td><td>--</td><td>Calibrates the current physical focuser drawtube position as step index 0.</td></tr>
         <tr><td><b>Autofocus (V-Curve Routine)</b></td><td>--</td><td><b>Automated Star Focus:</b> Sweeps focal contrast across multiple step samples in a background routine, plots the parabolic V-curve, and automatically centers the motor at the sharpest critical focus zone (CFZ).</td></tr>
+        <tr><td><b>Tracking Rate (Sidereal, Lunar, Solar, King)</b></td><td>--</td><td><b>Multi-Rate Kinematics:</b> Selects celestial drive rate. <b>Sidereal</b> (1.000x) for deep sky/stars, <b>Lunar</b> (0.963x) to keep the fast-orbiting Moon centered indefinitely, <b>Solar</b> (0.997x) for Sun observation with filter, or <b>King</b> for refraction-gradient compensation.</td></tr>
+        <tr><td><b>Cable Twist & Unwind (0°)</b></td><td>--</td><td><b>Cable-Wrap Prevention:</b> Monitors cumulative turns around the azimuth axis. Clicking <b>Unwind (0°)</b> smoothly slews azimuth back to True North to untangle cables without needing to disconnect.</td></tr>
         <tr><td><b>Simulate Uno</b></td><td>--</td><td>Enables software-only simulation mode for testing without hardware connected.</td></tr>
         </table>
         """)
@@ -828,7 +830,16 @@ class HelpGuideDialog(QDialog):
           <li><b>Galactic (l, b):</b> Coordinate system aligned with the plane of the Milky Way galaxy.</li>
           <li><b>Ecliptic (lambda, beta):</b> Coordinate system aligned with Earth's orbital plane around the Sun.</li>
           <li><b>Parallactic Angle:</b> The angle between the celestial pole and the local zenith at the object.</li>
-          <li><b>Atmospheric Refraction:</b> Atmospheric bending of starlight elevates celestial objects by several arcminutes (over 5 arcminutes near 10° altitude). AstroGoTo includes high-precision Bennett (1982) & Saemundsson (1986) refraction modeling (enabled in Settings) so the physical optical tube points directly to the refracted starlight, matching Stellarium's apparent view down to fractions of an arcsecond.</li>
+          <li><b>Atmospheric Refraction Correction:</b> Earth's atmosphere lifts objects near the horizon by up to 35 arcminutes (the width of the full Moon!). AstroGoTo integrates high-precision Saemundsson (1986) & Bennett (1982) formulas scaled for site temperature and barometric pressure, with exact 5-pass fixed-point inversion so pointing matches apparent sky positions down to sub-arcsecond accuracy.</li>
+          <li><b>Multi-Rate Celestial Kinematics:</b>
+            <ul>
+              <li><b>Sidereal:</b> Standard star rate (15.041"/s) for stars, nebulae, and deep sky targets.</li>
+              <li><b>Lunar:</b> Moon rate (14.492"/s), compensating for the Moon's 0.549°/hr eastward orbital lag relative to the stars so it remains centered in high-power eyepieces indefinitely.</li>
+              <li><b>Solar:</b> Mean solar rate (15.000"/s) for Sun observation with a certified filter.</li>
+              <li><b>King:</b> Edward S. King's rate formula accounting for the changing refraction gradient across altitude.</li>
+            </ul>
+          </li>
+          <li><b>Cable-Wrap Prevention:</b> The kinematics engine monitors cumulative azimuth turns and plans shortest-path slews within [-200°, +200°] while favoring unwinding angles to protect cables from strain.</li>
         </ul>
         """)
         tabs.addTab(t4, "4. Astronomy Math")
@@ -885,6 +896,7 @@ class HelpGuideDialog(QDialog):
 # ==============================================================================
 # SETTINGS MODAL DIALOG
 # ==============================================================================
+
 
 class SettingsDialog(QDialog):
     """Configuration editor with instant validation and JSON save."""
@@ -2066,6 +2078,29 @@ class AstroTelescopeWindow(QMainWindow):
         lbl_cmd.setProperty("class", "section-header")
         act_layout.addWidget(lbl_cmd)
 
+        # Smarter Kinematics: Tracking Rate Selector Bar
+        rate_box = QHBoxLayout()
+        rate_box.setSpacing(4)
+        lbl_rate = QLabel("Rate:")
+        lbl_rate.setStyleSheet("font-size: 11px; color: #8892A0; font-weight: 600;")
+        rate_box.addWidget(lbl_rate)
+
+        self.rate_buttons: Dict[str, QPushButton] = {}
+        for r_name in ("Sidereal", "Lunar", "Solar", "King"):
+            btn_r = QPushButton(r_name)
+            btn_r.setCheckable(True)
+            active = (r_name == self.config.get("tracking_rate", "Sidereal"))
+            btn_r.setChecked(active)
+            if active:
+                btn_r.setStyleSheet("font-size: 10px; padding: 3px 6px; background-color: #1E4472; color: #FFFFFF; font-weight: 700; border: 1px solid #336FA5;")
+            else:
+                btn_r.setStyleSheet("font-size: 10px; padding: 3px 6px;")
+            btn_r.clicked.connect(lambda checked, r=r_name: self._set_tracking_rate(r))
+            rate_box.addWidget(btn_r)
+            self.rate_buttons[r_name] = btn_r
+
+        act_layout.addLayout(rate_box)
+
         act_grid = QGridLayout()
         act_grid.setSpacing(5)
 
@@ -2103,6 +2138,21 @@ class AstroTelescopeWindow(QMainWindow):
         act_grid.addWidget(btn_manual_goto, 3, 0, 1, 2)
 
         act_layout.addLayout(act_grid)
+
+        # Cable-Wrap Prevention Monitor & Unwind Deck
+        cable_box = QHBoxLayout()
+        cable_box.setSpacing(6)
+        self.lbl_cable_wrap = QLabel("Cable: 0.00 turns [OK]")
+        self.lbl_cable_wrap.setStyleSheet("font-size: 11px; font-weight: 600; color: #88C0FF;")
+        cable_box.addWidget(self.lbl_cable_wrap)
+
+        btn_unwind = QPushButton("Unwind (0°)")
+        btn_unwind.setToolTip("Slew Azimuth to 0° True North to untangle cables")
+        btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; border-radius: 3px;")
+        btn_unwind.clicked.connect(self._unwind_cable)
+        cable_box.addWidget(btn_unwind)
+
+        act_layout.addLayout(cable_box)
         layout.addWidget(act_card)
 
         # Focus Control Card
@@ -2257,6 +2307,21 @@ class AstroTelescopeWindow(QMainWindow):
             self.core.emergency_stop()
         if hasattr(self, "btn_track"):
             self.btn_track.setText("Tracking: OFF")
+
+    def _set_tracking_rate(self, rate_name: str) -> None:
+        if self.core:
+            self.core.set_tracking_rate(rate_name)
+        for name, btn in getattr(self, "rate_buttons", {}).items():
+            is_active = (name.lower() == rate_name.lower())
+            btn.setChecked(is_active)
+            if is_active:
+                btn.setStyleSheet("font-size: 10px; padding: 3px 6px; background-color: #1E4472; color: #FFFFFF; font-weight: 700; border: 1px solid #336FA5;")
+            else:
+                btn.setStyleSheet("font-size: 10px; padding: 3px 6px;")
+
+    def _unwind_cable(self) -> None:
+        if self.core:
+            self.core.unwind_cable()
 
     def _sync_scope(self) -> None:
         if self.core:
@@ -2646,13 +2711,22 @@ class AstroTelescopeWindow(QMainWindow):
             self.lbl_stellarium_status.setText(f"STELLARIUM: LISTENING [{port_num}]")
             self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #D69E35; background: #262118; padding: 4px 8px; border: 1px solid #4D3D1F; border-radius: 3px;")
 
-        # Tracking state
+        # Tracking state with selected rate
+        cur_rate = getattr(self.core, "tracking_rate", "Sidereal").upper()
         if self.core.tracking_enabled:
-            self.btn_track.setText("Tracking: ON")
+            self.btn_track.setText(f"Tracking: ON ({cur_rate})")
             self.btn_track.setStyleSheet("background-color: #1F3F28; border-color: #31683E; color: #C8E6C9; font-weight: 700;")
         else:
             self.btn_track.setText("Tracking: OFF")
             self.btn_track.setStyleSheet("")
+
+        # Cable-Wrap Status Monitoring
+        if hasattr(self, "lbl_cable_wrap") and hasattr(self.core, "get_cable_wrap"):
+            wrap_deg, wrap_turns = self.core.get_cable_wrap()
+            color = "#FF7777" if abs(wrap_turns) > 0.4 else "#88C0FF"
+            status = "STRAIN" if abs(wrap_turns) > 0.4 else "OK"
+            self.lbl_cable_wrap.setText(f"Cable: {wrap_turns:+.2f} turns [{status}]")
+            self.lbl_cable_wrap.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {color};")
 
         # 3. Microsecond-Accurate Astronomy Clocks
         cur_t = self.core.get_time()

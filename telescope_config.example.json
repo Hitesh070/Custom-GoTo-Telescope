@@ -3,6 +3,8 @@
   "longitude_deg": 0.0,
   "epoch": "J2000",
   "apply_refraction": true,
+  "site_temperature_c": 15.0,
+  "site_pressure_mbar": 1013.25,
   "serial_port": "",
   "baud": 115200,
   "simulate": false,
