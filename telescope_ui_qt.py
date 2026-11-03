@@ -25,7 +25,8 @@ from PyQt6.QtWidgets import (
     QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, 
     QRadioButton, QButtonGroup, QTextEdit, QFrame, QSplitter, 
     QDialog, QFormLayout, QDoubleSpinBox, QSpinBox, 
-    QLineEdit, QMessageBox, QTabWidget, QScrollArea, QProgressBar
+    QLineEdit, QMessageBox, QTabWidget, QScrollArea, QProgressBar,
+    QTableWidget, QTableWidgetItem, QHeaderView
 )
 
 # Serial port detection
@@ -41,7 +42,7 @@ except ImportError:
 try:
     from telescope_bridge import (
         BridgeCore, StellariumServer, Config, StellariumHttpFollower,
-        sun_radec, radec_to_altaz, altaz_to_radec, separation_deg, 
+        sun_radec, moon_radec, planet_radec, radec_to_altaz, altaz_to_radec, separation_deg, 
         HAS_PYSERIAL, steps_to_angle, julian_date,
         precess_date_to_j2000, precess_j2000_to_date, lst_deg
     )
@@ -51,6 +52,8 @@ except ImportError:
     Config = None
     StellariumHttpFollower = None
     sun_radec = None
+    moon_radec = None
+    planet_radec = None
     radec_to_altaz = None
     altaz_to_radec = None
     separation_deg = None
@@ -470,6 +473,419 @@ QTabBar::tab:selected {
 
 
 # ==============================================================================
+# PURE RED NIGHT-VISION OBSERVATORY STYLESHEET (RHODOPSIN PRESERVING)
+# ==============================================================================
+
+NIGHT_VISION_STYLE = """
+QMainWindow, QDialog {
+    background-color: #000000;
+    color: #FF3333;
+}
+
+QWidget {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: #FF3333;
+    font-size: 12px;
+}
+
+QFrame.card {
+    background-color: #0A0101;
+    border: 1px solid #2E0505;
+    border-radius: 4px;
+}
+
+QFrame.header-deck {
+    background-color: #050000;
+    border-bottom: 1px solid #2E0505;
+}
+
+QFrame.console-deck {
+    background-color: #050000;
+    border-top: 1px solid #2E0505;
+}
+
+QLabel {
+    color: #FF4D4D;
+}
+
+QLabel.title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #FF6666;
+}
+
+QLabel.subtitle {
+    font-size: 11px;
+    color: #991F1F;
+}
+
+QLabel.section-header {
+    font-size: 12px;
+    font-weight: 700;
+    color: #CC2929;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #380808;
+}
+
+/* HIGH-VISIBILITY READABLE TELEMETRY TYPOGRAPHY (PURE RED) */
+QLabel.table-key {
+    font-size: 12px;
+    font-weight: 600;
+    color: #AA2222;
+    padding: 3px 0px;
+}
+
+QLabel.table-val {
+    font-family: 'Consolas', 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: #FF2222;
+    padding: 3px 0px;
+}
+
+QLabel.hero-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #991F1F;
+}
+
+QLabel.hero-val {
+    font-family: 'Consolas', 'JetBrains Mono', monospace;
+    font-size: 21px;
+    font-weight: 800;
+    color: #FF4444;
+}
+
+QPushButton {
+    background-color: #1A0303;
+    border: 1px solid #4D0A0A;
+    border-radius: 3px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #FF4D4D;
+}
+
+QPushButton:hover {
+    background-color: #2E0505;
+    border-color: #660D0D;
+    color: #FF7777;
+}
+
+QPushButton:pressed {
+    background-color: #0F0101;
+}
+
+QPushButton:disabled {
+    background-color: #0A0000;
+    border-color: #240404;
+    color: #4D0D0D;
+}
+
+QPushButton:checked {
+    background-color: #5C0B0B;
+    border: 1px solid #991414;
+    color: #FFAAAA;
+    font-weight: 700;
+}
+
+QPushButton.primary {
+    background-color: #5C0B0B;
+    border-color: #801010;
+    color: #FFAAAA;
+}
+
+QPushButton.primary:hover {
+    background-color: #730E0E;
+    color: #FFD0D0;
+}
+
+QPushButton.sync-btn {
+    background-color: #4A0808;
+    border-color: #7A1010;
+    color: #FF8888;
+}
+
+QPushButton.sync-btn:hover {
+    background-color: #6E1010;
+    color: #FFAAAA;
+}
+
+QPushButton.stop-btn {
+    background-color: #8A0A0A;
+    border-color: #B30D0D;
+    color: #FFAAAA;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+QPushButton.stop-btn:hover {
+    background-color: #A80D0D;
+    color: #FFD0D0;
+}
+
+QComboBox {
+    background-color: #140202;
+    border: 1px solid #400808;
+    border-radius: 3px;
+    padding: 4px 6px;
+    color: #FF4D4D;
+    font-size: 11px;
+}
+
+QComboBox:hover {
+    border-color: #660D0D;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 18px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #140202;
+    border: 1px solid #400808;
+    selection-background-color: #4D0A0A;
+    selection-color: #FFAAAA;
+    color: #FF4D4D;
+}
+
+QCheckBox, QRadioButton {
+    font-size: 11px;
+    color: #FF4D4D;
+    spacing: 5px;
+}
+
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    background-color: #140202;
+    border: 1px solid #400808;
+    border-radius: 2px;
+}
+
+QRadioButton::indicator {
+    border-radius: 7px;
+}
+
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: #660D0D;
+    border-color: #991414;
+}
+
+QTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox {
+    background-color: #080101;
+    border: 1px solid #380808;
+    border-radius: 3px;
+    color: #FF3333;
+    font-family: 'Consolas', 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px;
+}
+
+QTableWidget {
+    background-color: #080101;
+    border: 1px solid #380808;
+    gridline-color: #240404;
+    color: #FF4D4D;
+    selection-background-color: #4D0A0A;
+    selection-color: #FFAAAA;
+}
+
+QHeaderView::section {
+    background-color: #140202;
+    color: #AA2222;
+    font-weight: 700;
+    font-size: 11px;
+    border: 1px solid #380808;
+    padding: 4px;
+}
+
+QScrollBar:vertical {
+    border: none;
+    background: #080101;
+    width: 7px;
+}
+
+QScrollBar::handle:vertical {
+    background: #330808;
+    min-height: 20px;
+    border-radius: 3px;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: #080101;
+    height: 7px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #330808;
+    min-width: 20px;
+    border-radius: 3px;
+}
+
+QTabWidget::pane {
+    border: 1px solid #380808;
+    background-color: #0D0202;
+}
+
+QTabBar::tab {
+    background-color: #080101;
+    border: 1px solid #380808;
+    border-bottom: none;
+    padding: 6px 14px;
+    margin-right: 2px;
+    color: #801A1A;
+}
+
+QTabBar::tab:selected {
+    background-color: #0D0202;
+    color: #FF4D4D;
+    font-weight: 600;
+}
+
+QToolTip {
+    background-color: #140202;
+    color: #FF6666;
+    border: 1px solid #4D0A0A;
+}
+
+QMessageBox {
+    background-color: #000000;
+    color: #FF3333;
+}
+"""
+
+# ==============================================================================
+# LIVE CLOUD COVER & METEOROLOGICAL TELEMETRY SERVICE (OPEN-METEO)
+# ==============================================================================
+
+class LiveWeatherService(QObject):
+    """Asynchronous, non-blocking astronomical weather & cloud transparency telemetry
+    queried from Open-Meteo API for real-time sky observation conditions.
+    """
+    weather_updated = pyqtSignal(dict)
+    weather_error = pyqtSignal(str)
+
+    def __init__(self, config: Dict[str, Any], parent: Optional[QObject] = None):
+        super().__init__(parent)
+        self.config = config
+        self.latest_data: Optional[Dict[str, Any]] = None
+        self._is_fetching: bool = False
+        
+        # Periodic auto-refresh every 15 minutes (900,000 ms)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self.fetch_async)
+        self._timer.start(900000)
+
+    def fetch_async(self) -> None:
+        if self._is_fetching:
+            return
+        self._is_fetching = True
+        lat = float(self.config.get("latitude_deg", 12.84))
+        lon = float(self.config.get("longitude_deg", 80.15))
+        threading.Thread(target=self._worker, args=(lat, lon), daemon=True).start()
+
+    def _worker(self, lat: float, lon: float) -> None:
+        try:
+            import urllib.request
+            import json
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={lat:.4f}&longitude={lon:.4f}&current=cloud_cover,relative_humidity_2m,temperature_2m,wind_speed_10m,visibility,weather_code&hourly=cloud_cover&forecast_days=1"
+            req = urllib.request.Request(url, headers={"User-Agent": "AstroGoTo/2.0 (Custom Telescope Controller)"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            cur = data.get("current", {})
+            cloud = int(cur.get("cloud_cover", 0))
+            temp = float(cur.get("temperature_2m", 0.0))
+            hum = int(cur.get("relative_humidity_2m", 0))
+            wind = float(cur.get("wind_speed_10m", 0.0))
+            vis_m = float(cur.get("visibility", 10000.0))
+            vis_km = vis_m / 1000.0
+            code = int(cur.get("weather_code", 0))
+
+            wmo_desc = {
+                0: "Clear Sky", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+                45: "Fog", 48: "Depositing Rime Fog",
+                51: "Light Drizzle", 53: "Moderate Drizzle", 55: "Dense Drizzle",
+                61: "Slight Rain", 63: "Moderate Rain", 65: "Heavy Rain",
+                71: "Slight Snow", 73: "Moderate Snow", 75: "Heavy Snow",
+                80: "Rain Showers", 81: "Moderate Showers", 82: "Violent Showers",
+                95: "Thunderstorm", 96: "Thunderstorm with Hail", 99: "Heavy Hail Storm"
+            }.get(code, "Cloudy" if cloud > 60 else "Partly Cloudy")
+
+            if cloud >= 80:
+                transparency = "Obscured (Overcast)"
+                obs_status = "HEAVILY OBSCURED"
+                badge = "[OVERCAST]"
+            elif cloud >= 50:
+                transparency = "Poor (Broken Clouds)"
+                obs_status = "PARTIALLY OBSCURED"
+                badge = "[BROKEN CLOUDS]"
+            elif cloud >= 25:
+                transparency = "Fair (Scattered Clouds)"
+                obs_status = "FAIR SEEING"
+                badge = "[SCATTERED CLOUDS]"
+            elif cloud >= 10:
+                transparency = "Good (Few Clouds)"
+                obs_status = "GOOD SEEING"
+                badge = "[MAINLY CLEAR]"
+            else:
+                transparency = "Pristine (Clear Dark Sky)"
+                obs_status = "PRISTINE CONDITIONS"
+                badge = "[CLEAR SKY]"
+
+            result = {
+                "cloud_cover": cloud,
+                "temperature_c": temp,
+                "humidity_pct": hum,
+                "wind_kmh": wind,
+                "visibility_km": vis_km,
+                "weather_code": code,
+                "condition": wmo_desc,
+                "transparency": transparency,
+                "obs_status": obs_status,
+                "badge": badge,
+                "is_overcast": (cloud >= 80),
+                "updated_at": dt.datetime.now().strftime("%H:%M:%S")
+            }
+            self.latest_data = result
+            self.weather_updated.emit(result)
+        except Exception as e:
+            self.weather_error.emit(str(e))
+        finally:
+            self._is_fetching = False
+
+def play_audio_cue(cue_name: str, enabled: bool = True) -> None:
+    """Dispatches asynchronous audio feedback via standard library winsound (non-blocking)."""
+    if not enabled:
+        return
+    def _run():
+        try:
+            import winsound
+            if cue_name == "slew_complete":
+                # Pleasing ascending arrival chime: 587 Hz (D5) -> 880 Hz (A5)
+                winsound.Beep(587, 80)
+                time.sleep(0.03)
+                winsound.Beep(880, 110)
+            elif cue_name == "sync":
+                # Calibration confirmation tone: 784 Hz (G5)
+                winsound.Beep(784, 120)
+            elif cue_name == "warning":
+                # Cautionary low tone: 294 Hz (D4)
+                winsound.Beep(294, 180)
+            elif cue_name == "stop":
+                # Urgent double low buzz: 220 Hz (A3)
+                winsound.Beep(220, 90)
+                time.sleep(0.04)
+                winsound.Beep(220, 110)
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+
+# ==============================================================================
 # ENLARGED SCIENTIFIC POLAR SKY RADAR
 # ==============================================================================
 
@@ -488,6 +904,12 @@ class EnlargedPolarRadarWidget(QWidget):
         self.sun_alt: Optional[float] = None
         self.sun_az: Optional[float] = None
         self.sun_keepout_deg: float = 15.0
+        self.night_mode: bool = False
+
+    def set_night_mode(self, enabled: bool) -> None:
+        if self.night_mode != enabled:
+            self.night_mode = enabled
+            self.update()
 
     def set_scope_altaz(self, alt: float, az: float) -> None:
         if abs(self.scope_alt - alt) > 0.001 or abs(self.scope_az - az) > 0.001:
@@ -529,14 +951,16 @@ class EnlargedPolarRadarWidget(QWidget):
             return
 
         # 1. Background Disk
-        painter.setBrush(QBrush(QColor("#0B0E14")))
-        painter.setPen(QPen(QColor("#242C38"), 1.5))
+        bg_col = QColor("#050000") if self.night_mode else QColor("#0B0E14")
+        border_col = QColor("#3D0808") if self.night_mode else QColor("#242C38")
+        painter.setBrush(QBrush(bg_col))
+        painter.setPen(QPen(border_col, 1.5))
         painter.drawEllipse(QPointF(cx, cy), radius, radius)
 
         # 2. Concentric Elevation Rings (15°, 30°, 45°, 60°, 75°, 85°)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        pen_grid = QPen(QColor("#1A202C"), 1, Qt.PenStyle.DashLine)
-        pen_major = QPen(QColor("#222A3A"), 1, Qt.PenStyle.DashLine)
+        pen_grid = QPen(QColor("#240404") if self.night_mode else QColor("#1A202C"), 1, Qt.PenStyle.DashLine)
+        pen_major = QPen(QColor("#3D0808") if self.night_mode else QColor("#222A3A"), 1, Qt.PenStyle.DashLine)
         
         for deg in [15, 30, 45, 60, 75]:
             r_deg = radius * (1.0 - deg / 90.0)
@@ -545,12 +969,12 @@ class EnlargedPolarRadarWidget(QWidget):
 
         # Zenith Limit Ring (85°)
         r_85 = radius * (1.0 - 85.0 / 90.0)
-        pen_limit = QPen(QColor("#543D2A"), 1, Qt.PenStyle.DotLine)
+        pen_limit = QPen(QColor("#661010") if self.night_mode else QColor("#543D2A"), 1, Qt.PenStyle.DotLine)
         painter.setPen(pen_limit)
         painter.drawEllipse(QPointF(cx, cy), r_85, r_85)
 
         # 3. Radial Azimuth Spokes (every 30°)
-        pen_spoke = QPen(QColor("#181E29"), 1, Qt.PenStyle.DashLine)
+        pen_spoke = QPen(QColor("#1F0404") if self.night_mode else QColor("#181E29"), 1, Qt.PenStyle.DashLine)
         painter.setPen(pen_spoke)
         for deg in range(0, 360, 30):
             if deg in (0, 90, 180, 270):
@@ -561,14 +985,14 @@ class EnlargedPolarRadarWidget(QWidget):
             painter.drawLine(QPointF(cx, cy), QPointF(x_outer, y_outer))
 
         # 4. Crosshair Axes (N-S and E-W)
-        pen_axis = QPen(QColor("#222A3A"), 1)
+        pen_axis = QPen(QColor("#330606") if self.night_mode else QColor("#222A3A"), 1)
         painter.setPen(pen_axis)
         painter.drawLine(QPointF(cx, cy - radius), QPointF(cx, cy + radius))
         painter.drawLine(QPointF(cx - radius, cy), QPointF(cx + radius, cy))
 
         # 5. Outer Perimeter Ticks
-        pen_tick_maj = QPen(QColor("#455266"), 1)
-        pen_tick_min = QPen(QColor("#263040"), 1)
+        pen_tick_maj = QPen(QColor("#5E0D0D") if self.night_mode else QColor("#455266"), 1)
+        pen_tick_min = QPen(QColor("#2E0505") if self.night_mode else QColor("#263040"), 1)
         for deg in range(0, 360, 10):
             rad = math.radians(deg)
             is_major = (deg % 30 == 0)
@@ -585,10 +1009,10 @@ class EnlargedPolarRadarWidget(QWidget):
         painter.setFont(font_cardinal)
 
         # Major Cardinals
-        painter.setPen(QColor("#5AA9FF")) # North (Accent Blue)
+        painter.setPen(QColor("#FF3333") if self.night_mode else QColor("#5AA9FF")) # North
         painter.drawText(QRectF(cx - 10, cy - radius - 20, 20, 16), Qt.AlignmentFlag.AlignCenter, "N")
 
-        painter.setPen(QColor("#8892A0"))
+        painter.setPen(QColor("#AA2222") if self.night_mode else QColor("#8892A0"))
         painter.drawText(QRectF(cx + radius + 6, cy - 8, 20, 16), Qt.AlignmentFlag.AlignCenter, "E")
         painter.drawText(QRectF(cx - 10, cy + radius + 5, 20, 16), Qt.AlignmentFlag.AlignCenter, "S")
         painter.drawText(QRectF(cx - radius - 26, cy - 8, 20, 16), Qt.AlignmentFlag.AlignCenter, "W")
@@ -596,7 +1020,7 @@ class EnlargedPolarRadarWidget(QWidget):
         # Intercardinal Labels (NE, SE, SW, NW)
         font_inter = QFont("Segoe UI", 7, QFont.Weight.Bold)
         painter.setFont(font_inter)
-        painter.setPen(QColor("#505D70"))
+        painter.setPen(QColor("#661515") if self.night_mode else QColor("#505D70"))
         r_label = radius + 11.0
         for name, ang in [("NE", 45), ("SE", 135), ("SW", 225), ("NW", 315)]:
             rad = math.radians(ang)
@@ -607,14 +1031,14 @@ class EnlargedPolarRadarWidget(QWidget):
         # Elevation Labels
         font_elev = QFont("Segoe UI", 8)
         painter.setFont(font_elev)
-        painter.setPen(QColor("#4F5868"))
+        painter.setPen(QColor("#661414") if self.night_mode else QColor("#4F5868"))
         for elev in [15, 30, 45, 60, 75]:
             r_elev = radius * (1.0 - elev / 90.0)
             painter.drawText(QRectF(cx + 4, cy - r_elev - 7, 30, 14), Qt.AlignmentFlag.AlignLeft, f"{elev}°")
         painter.drawText(QRectF(cx + 4, cy - 9, 30, 14), Qt.AlignmentFlag.AlignLeft, "90°")
 
         # Zenith Center Point
-        painter.setBrush(QBrush(QColor("#5AA9FF")))
+        painter.setBrush(QBrush(QColor("#FF2222") if self.night_mode else QColor("#5AA9FF")))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(QPointF(cx, cy), 2, 2)
 
@@ -623,25 +1047,46 @@ class EnlargedPolarRadarWidget(QWidget):
             sx, sy = self._altaz_to_xy(self.sun_alt, self.sun_az, cx, cy, radius)
             r_danger = radius * (self.sun_keepout_deg / 90.0)
 
-            # Danger keep-out zone circle (semi-transparent reddish-amber)
-            painter.setPen(QPen(QColor(220, 60, 60, 160), 1, Qt.PenStyle.DashLine))
-            painter.setBrush(QBrush(QColor(220, 50, 50, 18)))
-            painter.drawEllipse(QPointF(sx, sy), r_danger, r_danger)
+            if self.night_mode:
+                # Danger keep-out zone circle (deep dark crimson)
+                painter.setPen(QPen(QColor(160, 20, 20, 140), 1, Qt.PenStyle.DashLine))
+                painter.setBrush(QBrush(QColor(100, 10, 10, 25)))
+                painter.drawEllipse(QPointF(sx, sy), r_danger, r_danger)
 
-            # Outer Corona Glow
-            painter.setPen(QPen(QColor(255, 200, 60, 80), 1))
-            painter.setBrush(QBrush(QColor(255, 190, 40, 40)))
-            painter.drawEllipse(QPointF(sx, sy), 9.0, 9.0)
+                # Outer Corona Glow (ruby red)
+                painter.setPen(QPen(QColor(140, 15, 15, 80), 1))
+                painter.setBrush(QBrush(QColor(90, 10, 10, 30)))
+                painter.drawEllipse(QPointF(sx, sy), 9.0, 9.0)
 
-            # Astronomical Sun Symbol ☉ (solar disc + central dot)
-            painter.setPen(QPen(QColor("#FFC857"), 1.5))
-            painter.setBrush(QBrush(QColor("#E6A820")))
-            painter.drawEllipse(QPointF(sx, sy), 5.5, 5.5)
+                # Astronomical Sun Symbol ☉ (dark crimson disc)
+                painter.setPen(QPen(QColor("#991414"), 1.5))
+                painter.setBrush(QBrush(QColor("#5C0B0B")))
+                painter.drawEllipse(QPointF(sx, sy), 5.5, 5.5)
 
-            # Inner Core Dot
-            painter.setBrush(QBrush(QColor("#FFFFFF")))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(sx, sy), 1.8, 1.8)
+                # Inner Core Dot (ruby red, zero white)
+                painter.setBrush(QBrush(QColor("#CC2222")))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPointF(sx, sy), 1.8, 1.8)
+            else:
+                # Danger keep-out zone circle (semi-transparent reddish-amber)
+                painter.setPen(QPen(QColor(220, 60, 60, 160), 1, Qt.PenStyle.DashLine))
+                painter.setBrush(QBrush(QColor(220, 50, 50, 18)))
+                painter.drawEllipse(QPointF(sx, sy), r_danger, r_danger)
+
+                # Outer Corona Glow
+                painter.setPen(QPen(QColor(255, 200, 60, 80), 1))
+                painter.setBrush(QBrush(QColor(255, 190, 40, 40)))
+                painter.drawEllipse(QPointF(sx, sy), 9.0, 9.0)
+
+                # Astronomical Sun Symbol ☉ (solar disc + central dot)
+                painter.setPen(QPen(QColor("#FFC857"), 1.5))
+                painter.setBrush(QBrush(QColor("#E6A820")))
+                painter.drawEllipse(QPointF(sx, sy), 5.5, 5.5)
+
+                # Inner Core Dot
+                painter.setBrush(QBrush(QColor("#FFFFFF")))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPointF(sx, sy), 1.8, 1.8)
 
         # 8. Stellarium Target Reticle
         if self.target_alt is not None and self.target_az is not None:
@@ -649,16 +1094,17 @@ class EnlargedPolarRadarWidget(QWidget):
             mx, my = self._altaz_to_xy(self.scope_alt, self.scope_az, cx, cy, radius)
 
             # Connecting intercept vector
-            painter.setPen(QPen(QColor(200, 140, 50, 110), 1, Qt.PenStyle.DashLine))
+            painter.setPen(QPen(QColor(160, 40, 40, 120) if self.night_mode else QColor(200, 140, 50, 110), 1, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(mx, my), QPointF(tx, ty))
 
             # Target Reticle Ring
+            target_col = QColor("#FF4D4D") if self.night_mode else QColor("#E5A035")
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor("#E5A035"), 1.3, Qt.PenStyle.DashLine))
+            painter.setPen(QPen(target_col, 1.3, Qt.PenStyle.DashLine))
             painter.drawEllipse(QPointF(tx, ty), 8.5, 8.5)
             
             # Target Crosshairs
-            painter.setPen(QPen(QColor("#E5A035"), 1.0, Qt.PenStyle.SolidLine))
+            painter.setPen(QPen(target_col, 1.0, Qt.PenStyle.SolidLine))
             painter.drawLine(QPointF(tx - 13, ty), QPointF(tx - 5, ty))
             painter.drawLine(QPointF(tx + 5, ty), QPointF(tx + 13, ty))
             painter.drawLine(QPointF(tx, ty - 13), QPointF(tx, ty - 5))
@@ -668,19 +1114,22 @@ class EnlargedPolarRadarWidget(QWidget):
         sx, sy = self._altaz_to_xy(self.scope_alt, self.scope_az, cx, cy, radius)
 
         # Azimuth direction vector from zenith to mount
-        painter.setPen(QPen(QColor(70, 130, 200, 65), 1))
+        mount_vec_col = QColor(100, 20, 20, 75) if self.night_mode else QColor(70, 130, 200, 65)
+        painter.setPen(QPen(mount_vec_col, 1))
         painter.drawLine(QPointF(cx, cy), QPointF(sx, sy))
 
         # Mount Reticle Rings
+        mount_outer = QColor("#CC2222") if self.night_mode else QColor("#4A88CE")
+        mount_inner = QColor("#FF4444") if self.night_mode else QColor("#5AA9FF")
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(QColor("#4A88CE"), 1.6))
+        painter.setPen(QPen(mount_outer, 1.6))
         painter.drawEllipse(QPointF(sx, sy), 10.0, 10.0)
         
-        painter.setPen(QPen(QColor("#5AA9FF"), 1.2))
+        painter.setPen(QPen(mount_inner, 1.2))
         painter.drawEllipse(QPointF(sx, sy), 3.0, 3.0)
 
         # Mount Reticle Crosshair Ticks
-        painter.setPen(QPen(QColor("#5AA9FF"), 1.2))
+        painter.setPen(QPen(mount_inner, 1.2))
         painter.drawLine(QPointF(sx - 16, sy), QPointF(sx - 10, sy))
         painter.drawLine(QPointF(sx + 10, sy), QPointF(sx + 16, sy))
         painter.drawLine(QPointF(sx, sy - 16), QPointF(sx, sy - 10))
@@ -694,11 +1143,12 @@ class EnlargedPolarRadarWidget(QWidget):
 class HelpGuideDialog(QDialog):
     """Exhaustive user guide and project documentation dialog."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, night_mode: bool = False, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.night_mode = night_mode
         self.setWindowTitle("Custom GoTo Telescope Controller - User Manual & Technical Guide")
-        self.resize(780, 640)
-        self.setStyleSheet(SCIENTIFIC_STYLE)
+        self.resize(800, 660)
+        self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -884,6 +1334,43 @@ class HelpGuideDialog(QDialog):
         """)
         tabs.addTab(t5, "5. Hardware & Troubleshooting")
 
+        # Tab 6: Sky Tour, Night Vision & Audio
+        t6 = QTextEdit()
+        t6.setReadOnly(True)
+        t6.setHtml("""
+        <h3>6. "Tonight's Best" Sky Tour, Dark-Sky Night Vision & Audio Cues</h3>
+        
+        <h4>1. "Tonight's Best" Interactive Sky Tour (Ctrl+T):</h4>
+        <ul>
+          <li><b>Live Altitude Filtering:</b> Instantly filters out targets that are below the horizon or submerged in ground haze, highlighting objects visible above <b>15° altitude</b>.</li>
+          <li><b>Curated Catalog:</b> Over 30 premier targets across <i>Planets & Moon</i> (computed live using Keplerian and Meeus ephemerides), <i>Messier Deep-Sky Objects</i> (nebulae, clusters, galaxies), and <i>Double Stars & Stellar Giants</i>.</li>
+          <li><b>Precision Eyepiece Matching:</b>
+            <ul>
+              <li><b>20x Eyepiece (8.5mm, 2.5° True FOV):</b> Wide-field framing for sprawling open clusters (Pleiades M45, Beehive M44, Double Cluster) and the Andromeda Galaxy (M31).</li>
+              <li><b>30x Eyepiece (5.67mm, 1.7° True FOV):</b> Optimal contrast for emission nebulae (Orion Nebula M42, Lagoon M8), globular clusters (Hercules M13, Sagittarius M22), and full-disc lunar views.</li>
+              <li><b>40x Eyepiece (4.25mm, 1.25° True FOV):</b> Maximum resolving power (1.5mm exit pupil) for planetary discs and moons (Jupiter, Saturn, Mars), close double stars (Albireo, Castor, Mizar), and lunar crater rims.</li>
+            </ul>
+          </li>
+          <li><b>One-Click GoTo:</b> Select any target and click <b>Slew to Target (GoTo)</b> to command the mount directly with constant velocity and automatic tracking.</li>
+        </ul>
+
+        <h4>2. True Red Night-Vision Mode (Ctrl+N):</h4>
+        <ul>
+          <li>Preserves biological <b>rhodopsin dark adaptation</b> in the human eye by suppressing all blue/green wavelengths (>620nm pure red spectrum).</li>
+          <li>Converts the entire UI and the Polar Celestial Sky Radar to a high-contrast pitch-black and deep crimson palette.</li>
+          <li>Toggle instantly with the <b>Night Vision</b> button in the header deck or the global hotkey <b>Ctrl+N</b>.</li>
+        </ul>
+
+        <h4>3. Non-Blocking Acoustic Feedback:</h4>
+        <ul>
+          <li><b>Arrival Chime (D5 -> A5):</b> Pleasant rising tone alerts the observer when a GoTo slew has completed and the target is centered, without needing to glance away from the telescope eyepiece!</li>
+          <li><b>Sync Tone (G5):</b> Crisp confirmation tone when target synchronization and coordinate calibration succeed.</li>
+          <li><b>Warning / Refusal Tone (D4):</b> Cautionary alert if a GoTo command violates zenith limits or the 15° Solar keep-out safety boundary.</li>
+          <li>Audio cues run asynchronously on a background thread and can be muted at any time via the <b>Audio</b> checkbox.</li>
+        </ul>
+        """)
+        tabs.addTab(t6, "6. Sky Tour & Night Vision")
+
         btn_box = QHBoxLayout()
         btn_box.addStretch()
         btn_close = QPushButton("Close Manual")
@@ -901,12 +1388,13 @@ class HelpGuideDialog(QDialog):
 class SettingsDialog(QDialog):
     """Configuration editor with instant validation and JSON save."""
 
-    def __init__(self, config: Dict[str, Any], parent: Optional[QWidget] = None):
+    def __init__(self, config: Dict[str, Any], night_mode: bool = False, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.config = config
+        self.night_mode = night_mode
         self.setWindowTitle("Telescope Configuration & Alignment Settings")
         self.resize(520, 560)
-        self.setStyleSheet(SCIENTIFIC_STYLE)
+        self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1350,6 +1838,1138 @@ class AutoFocusDialog(QDialog):
         event.accept()
 
 # ==============================================================================
+# FEATURE 2: TONIGHT'S BEST INTERACTIVE SKY TOUR & CURATED CELESTIAL CATALOG
+# ==============================================================================
+
+TONIGHT_BEST_CATALOG = [
+    # --------------------------------------------------------------------------
+    # Solar System (Dynamic Analytical Ephemeris)
+    # --------------------------------------------------------------------------
+    {
+        "name": "Moon",
+        "category": "Solar System",
+        "type": "Moon",
+        "constellation": "Dynamic",
+        "mag": -12.7,
+        "is_dynamic": True,
+        "dynamic_body": "Moon",
+        "ra": 0.0, "dec": 0.0,
+        "eyepiece": "30x / 40x",
+        "eyepiece_badge": "30x (Full Disc 1.7°) / 40x (Craters 1.25°)",
+        "eyepiece_detail": "30x captures the complete lunar globe with surrounding space; switch to 40x for razor-sharp crater rim shadows along the terminator.",
+        "description": "Earth's natural satellite. Features striking rayed craters (Tycho, Copernicus), rugged mountain peaks (Apennines), and dark basaltic lava plains (Maria)."
+    },
+    {
+        "name": "Jupiter",
+        "category": "Solar System",
+        "type": "Gas Giant Planet",
+        "constellation": "Dynamic",
+        "mag": -2.7,
+        "is_dynamic": True,
+        "dynamic_body": "Jupiter",
+        "ra": 0.0, "dec": 0.0,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x provides 1.5mm exit pupil, optimal resolving power to reveal Jupiter's flattened planetary disc and all four Galilean moons.",
+        "description": "King of the planets. Readily displays bright atmospheric disc and its four major moons (Io, Europa, Ganymede, Callisto) dancing in an orbital plane."
+    },
+    {
+        "name": "Saturn",
+        "category": "Solar System",
+        "type": "Ringed Planet",
+        "constellation": "Dynamic",
+        "mag": +0.6,
+        "is_dynamic": True,
+        "dynamic_body": "Saturn",
+        "ra": 0.0, "dec": 0.0,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x maximizes telescope focal resolving scale, cleanly separating Saturn's iconic ring system from the golden planetary globe.",
+        "description": "The ringed jewel of the solar system. Reveals golden oval disc, breathtaking ring system, and bright orange giant moon Titan."
+    },
+    {
+        "name": "Mars",
+        "category": "Solar System",
+        "type": "Terrestrial Planet",
+        "constellation": "Dynamic",
+        "mag": -0.5,
+        "is_dynamic": True,
+        "dynamic_body": "Mars",
+        "ra": 0.0, "dec": 0.0,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x offers the highest magnification to distinguish the fiery ochre-red disc and bright polar cap during favorable opposition.",
+        "description": "The Red Planet. Distinguishable by its warm fiery orange-ochre disc, prominent brightness variations, and thin carbon dioxide atmosphere."
+    },
+    {
+        "name": "Venus",
+        "category": "Solar System",
+        "type": "Inner Planet",
+        "constellation": "Dynamic",
+        "mag": -4.2,
+        "is_dynamic": True,
+        "dynamic_body": "Venus",
+        "ra": 0.0, "dec": 0.0,
+        "eyepiece": "30x / 40x",
+        "eyepiece_badge": "30x (Mid Power) / 40x (High Power)",
+        "eyepiece_detail": "30x or 40x cleanly resolves Venusian crescent and gibbous phases without overwhelming glare against twilight sky.",
+        "description": "The brilliant Morning/Evening Star shrouded in dense reflective sulfuric acid clouds; displays prominent changing phases like the Moon."
+    },
+
+    # --------------------------------------------------------------------------
+    # Messier & Premier Deep-Sky Objects
+    # --------------------------------------------------------------------------
+    {
+        "name": "Pleiades (M45)",
+        "category": "Deep Sky",
+        "type": "Open Cluster",
+        "constellation": "Tau",
+        "mag": 1.6,
+        "is_dynamic": False,
+        "ra": 56.750, "dec": 24.116,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x wide 2.5° true FOV is essential to capture the entire 2° cluster with all seven sisters in one dazzling field.",
+        "description": "The Seven Sisters. Young B-type blue luminous giant stars enveloped in delicate reflection nebulosity; absolute showpiece of the winter sky."
+    },
+    {
+        "name": "Orion Nebula (M42)",
+        "category": "Deep Sky",
+        "type": "Emission Nebula",
+        "constellation": "Ori",
+        "mag": 4.0,
+        "is_dynamic": False,
+        "ra": 83.822, "dec": -5.391,
+        "eyepiece": "30x",
+        "eyepiece_badge": "30x (Mid Power - 1.7° FOV)",
+        "eyepiece_detail": "30x frames the vast glowing nebulous wings while maintaining high contrast to resolve the central Trapezium stellar cluster.",
+        "description": "Massive stellar nursery ~1,344 ly away. Swirling clouds of ionized interstellar hydrogen lit by hot newborn stars at its core."
+    },
+    {
+        "name": "Andromeda Galaxy (M31)",
+        "category": "Deep Sky",
+        "type": "Spiral Galaxy",
+        "constellation": "And",
+        "mag": 3.4,
+        "is_dynamic": False,
+        "ra": 10.684, "dec": 41.269,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x delivers maximum 3.0mm exit pupil for faint extended light, capturing the intense nucleus and elongated oval disk.",
+        "description": "Nearest major spiral galaxy, 2.5 million light years distant. Contains over 1 trillion stars; largest galaxy in our Local Group."
+    },
+    {
+        "name": "Hercules Cluster (M13)",
+        "category": "Deep Sky",
+        "type": "Globular Cluster",
+        "constellation": "Her",
+        "mag": 5.8,
+        "is_dynamic": False,
+        "ra": 250.422, "dec": 36.460,
+        "eyepiece": "30x",
+        "eyepiece_badge": "30x (Mid Power - 1.7° FOV)",
+        "eyepiece_detail": "30x darkens the sky background to highlight the dense, glittering spherical ball of ancient stars.",
+        "description": "Great Globular Cluster in Hercules. Dense spherical swarm of roughly 300,000 ancient stars orbiting the Milky Way galactic halo."
+    },
+    {
+        "name": "Beehive Cluster (M44)",
+        "category": "Deep Sky",
+        "type": "Open Cluster",
+        "constellation": "Cnc",
+        "mag": 3.7,
+        "is_dynamic": False,
+        "ra": 130.100, "dec": 19.670,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x wide field comfortably frames this sprawling 1.5° cluster, showing dozens of glittering stellar embers.",
+        "description": "Praesepe (The Manger). Prominent open cluster in Cancer known since antiquity; contains hundreds of stars born from the same nebula."
+    },
+    {
+        "name": "Double Cluster (NGC 869 & 884)",
+        "category": "Deep Sky",
+        "type": "Double Open Cluster",
+        "constellation": "Per",
+        "mag": 3.7,
+        "is_dynamic": False,
+        "ra": 35.150, "dec": 57.150,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x (2.5° FOV) frames both twin sister clusters side-by-side in one unforgettable rich star field.",
+        "description": "h and Chi Persei. Dazzling twin open star clusters in Perseus packed with luminous blue-white supergiants and orange stars."
+    },
+    {
+        "name": "Lagoon Nebula (M8)",
+        "category": "Deep Sky",
+        "type": "Emission Nebula / Cluster",
+        "constellation": "Sgr",
+        "mag": 6.0,
+        "is_dynamic": False,
+        "ra": 271.140, "dec": -24.380,
+        "eyepiece": "20x / 30x",
+        "eyepiece_badge": "20x (Wide Field) / 30x (Mid Power)",
+        "eyepiece_detail": "20x captures the surrounding Milky Way star cloud; 30x reveals the dark dividing dust rift separating bright lobes.",
+        "description": "Giant interstellar cloud in Sagittarius classified as an H II region with an embedded young open star cluster NGC 6530."
+    },
+    {
+        "name": "Dumbbell Nebula (M27)",
+        "category": "Deep Sky",
+        "type": "Planetary Nebula",
+        "constellation": "Vul",
+        "mag": 7.5,
+        "is_dynamic": False,
+        "ra": 299.901, "dec": 22.721,
+        "eyepiece": "30x",
+        "eyepiece_badge": "30x (Mid Power - 1.7° FOV)",
+        "eyepiece_detail": "30x provides the optimal contrast and magnification to reveal the distinctive hourglass / apple-core lobes.",
+        "description": "First planetary nebula ever discovered (Charles Messier, 1764). Expanding glowing gas envelope ejected by a dying red giant star."
+    },
+    {
+        "name": "Ring Nebula (M57)",
+        "category": "Deep Sky",
+        "type": "Planetary Nebula",
+        "constellation": "Lyr",
+        "mag": 8.8,
+        "is_dynamic": False,
+        "ra": 283.396, "dec": 33.029,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x high magnification is needed to enlarge this compact 1-arcminute smoke ring against the celestial background.",
+        "description": "Famous celestial smoke ring in Lyra formed by a dying star ejecting its outer atmosphere into space."
+    },
+    {
+        "name": "Ptolemy's Cluster (M7)",
+        "category": "Deep Sky",
+        "type": "Open Cluster",
+        "constellation": "Sco",
+        "mag": 3.3,
+        "is_dynamic": False,
+        "ra": 268.460, "dec": -34.820,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x wide field cleanly encompasses this large 1.3° cluster near the stinger of Scorpius.",
+        "description": "Brilliant open cluster recorded by Ptolemy in 130 AD. Rich collection of ~80 luminous stars immersed in Milky Way dust."
+    },
+    {
+        "name": "Butterfly Cluster (M6)",
+        "category": "Deep Sky",
+        "type": "Open Cluster",
+        "constellation": "Sco",
+        "mag": 4.2,
+        "is_dynamic": False,
+        "ra": 265.020, "dec": -32.220,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x provides the exact framing to appreciate the butterfly wing outline and contrast its orange star BM Sco.",
+        "description": "Open star cluster whose member arrangement resembles an open-winged butterfly with bright orange giant star at its heart."
+    },
+    {
+        "name": "Wild Duck Cluster (M11)",
+        "category": "Deep Sky",
+        "type": "Open Cluster",
+        "constellation": "Sct",
+        "mag": 6.3,
+        "is_dynamic": False,
+        "ra": 282.760, "dec": -6.270,
+        "eyepiece": "30x",
+        "eyepiece_badge": "30x (Mid Power - 1.7° FOV)",
+        "eyepiece_detail": "30x reveals the dense, almost-globular compact swarm and prominent central yellow giant star.",
+        "description": "One of the richest and most compact open clusters known, containing nearly 3,000 stars in the shield of Scutum."
+    },
+    {
+        "name": "Sagittarius Cluster (M22)",
+        "category": "Deep Sky",
+        "type": "Globular Cluster",
+        "constellation": "Sgr",
+        "mag": 5.1,
+        "is_dynamic": False,
+        "ra": 279.100, "dec": -23.900,
+        "eyepiece": "30x",
+        "eyepiece_badge": "30x (Mid Power - 1.7° FOV)",
+        "eyepiece_detail": "30x resolves outer periphery stars of this exceptionally close (10,600 ly) massive globular cluster.",
+        "description": "One of the brightest globular clusters in the night sky, spanning 32 arcminutes near the galactic bulge."
+    },
+    {
+        "name": "Great Pegasus Cluster (M15)",
+        "category": "Deep Sky",
+        "type": "Globular Cluster",
+        "constellation": "Peg",
+        "mag": 6.2,
+        "is_dynamic": False,
+        "ra": 322.493, "dec": 12.167,
+        "eyepiece": "30x",
+        "eyepiece_badge": "30x (Mid Power - 1.7° FOV)",
+        "eyepiece_detail": "30x pinpoints the intensely concentrated core undergoing core collapse.",
+        "description": "Ancient globular cluster ~33,600 ly away, renowned for hosting one of the densest cores of any known globular cluster."
+    },
+    {
+        "name": "Shoe-Buckle Cluster (M35)",
+        "category": "Deep Sky",
+        "type": "Open Cluster",
+        "constellation": "Gem",
+        "mag": 5.3,
+        "is_dynamic": False,
+        "ra": 92.200, "dec": 24.330,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x frames this magnificent pinwheel of hundreds of stars at the feet of Gemini.",
+        "description": "Superb open star cluster spanning the diameter of the full Moon, visible as a glowing patch to the unaided eye."
+    },
+
+    # --------------------------------------------------------------------------
+    # Showpiece Double Stars & Stellar Giants
+    # --------------------------------------------------------------------------
+    {
+        "name": "Albireo (Beta Cygni)",
+        "category": "Double Star",
+        "type": "Binary Double Star",
+        "constellation": "Cyg",
+        "mag": 3.1,
+        "is_dynamic": False,
+        "ra": 292.680, "dec": 27.960,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x cleanly separates the 34-arcsec pair and intensifies the vivid topaz-gold and sapphire-blue color contrast.",
+        "description": "The finest contrasting double star in the heavens. Golden-yellow primary paired with a sparkling electric-blue companion."
+    },
+    {
+        "name": "Mizar & Alcor",
+        "category": "Double Star",
+        "type": "Multiple Double Star",
+        "constellation": "UMa",
+        "mag": 2.2,
+        "is_dynamic": False,
+        "ra": 200.981, "dec": 54.925,
+        "eyepiece": "30x / 40x",
+        "eyepiece_badge": "30x (Wide Pair) / 40x (Mizar Split)",
+        "eyepiece_detail": "30x shows both Mizar and Alcor in the field; 40x cleanly splits Mizar into Mizar A and B (14.4 arcsec separation).",
+        "description": "Historic horse-and-rider in Ursa Major. The first telescopic binary ever discovered (Benedetto Castelli, 1617)."
+    },
+    {
+        "name": "Castor (Alpha Geminorum)",
+        "category": "Double Star",
+        "type": "Multiple Star System",
+        "constellation": "Gem",
+        "mag": 1.9,
+        "is_dynamic": False,
+        "ra": 113.650, "dec": 31.890,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x offers the high angular resolution required to split this celebrated ~5 arcsec pure white binary pair.",
+        "description": "Fabulous sextuple star system whose two bright A-type main sequence stars orbit with a period of ~467 years."
+    },
+    {
+        "name": "Almach (Gamma Andromedae)",
+        "category": "Double Star",
+        "type": "Colorful Double Star",
+        "constellation": "And",
+        "mag": 2.1,
+        "is_dynamic": False,
+        "ra": 30.975, "dec": 42.333,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x splits the 9.6 arcsec separation into a warm golden-tangerine giant and emerald-cyan companion.",
+        "description": "Spectacular colorful binary rivaling Albireo. Deep golden-orange primary with an emerald-turquoise secondary."
+    },
+    {
+        "name": "Cor Caroli (Alpha CVn)",
+        "category": "Double Star",
+        "type": "Magnetic Double Star",
+        "constellation": "CVn",
+        "mag": 2.9,
+        "is_dynamic": False,
+        "ra": 194.007, "dec": 38.318,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x provides easy separation (19.6 arcsec) of the pale yellow-white magnetic primary and violet-tinted companion.",
+        "description": "Heart of Charles. Prototype of Canum Venaticorum magnetic variable stars, boasting an unusually intense magnetic field."
+    },
+    {
+        "name": "Polaris (Alpha Ursae Minoris)",
+        "category": "Double Star",
+        "type": "Pole Star / Binary",
+        "constellation": "UMi",
+        "mag": 2.0,
+        "is_dynamic": False,
+        "ra": 37.954, "dec": 89.264,
+        "eyepiece": "40x",
+        "eyepiece_badge": "40x (High Power - 1.25° FOV)",
+        "eyepiece_detail": "40x high power darkens the field around Polaris to reveal faint 9th-magnitude companion Polaris B (18 arcsec sep).",
+        "description": "The North Star. Classical Cepheid variable supergiant located within 0.7 degrees of the North Celestial Pole."
+    },
+    {
+        "name": "Sirius (Alpha Canis Majoris)",
+        "category": "Double Star",
+        "type": "Brightest Star",
+        "constellation": "CMa",
+        "mag": -1.46,
+        "is_dynamic": False,
+        "ra": 101.287, "dec": -16.716,
+        "eyepiece": "20x / 30x",
+        "eyepiece_badge": "20x (Wide Star Field) / 30x",
+        "eyepiece_detail": "20x or 30x displays Sirius's breathtaking diamond scintillation against a wide background star field.",
+        "description": "The Dog Star. Brightest star in the nighttime sky; luminous A-type star only 8.6 light years from Earth."
+    },
+    {
+        "name": "Betelgeuse (Alpha Orionis)",
+        "category": "Double Star",
+        "type": "Red Supergiant",
+        "constellation": "Ori",
+        "mag": 0.5,
+        "is_dynamic": False,
+        "ra": 88.793, "dec": 7.407,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x shows Betelgeuse's deep fiery reddish-amber hue contrasted against neighboring blue supergiants in Orion.",
+        "description": "Semiregular variable red supergiant nearing supernova; one of the largest stars visible to the naked eye."
+    },
+    {
+        "name": "Rigel (Beta Orionis)",
+        "category": "Double Star",
+        "type": "Blue Supergiant / Double",
+        "constellation": "Ori",
+        "mag": 0.12,
+        "is_dynamic": False,
+        "ra": 78.634, "dec": -8.201,
+        "eyepiece": "30x / 40x",
+        "eyepiece_badge": "30x (Brilliance) / 40x (Companion)",
+        "eyepiece_detail": "40x separates the dazzling blue-white primary from its faint 6.8-mag companion Rigel B (9.5 arcsec sep).",
+        "description": "Luminous blue-white supergiant radiating roughly 120,000 times the total luminosity of the Sun."
+    },
+    {
+        "name": "Vega (Alpha Lyrae)",
+        "category": "Double Star",
+        "type": "Photometric Standard",
+        "constellation": "Lyr",
+        "mag": 0.03,
+        "is_dynamic": False,
+        "ra": 279.234, "dec": 38.783,
+        "eyepiece": "30x",
+        "eyepiece_badge": "30x (Mid Power - 1.7° FOV)",
+        "eyepiece_detail": "30x frames brilliant Vega within the rich surrounding Milky Way star field of Lyra.",
+        "description": "Sapphire-white photometric zero-point standard star of the celestial magnitude system; anchor of the Summer Triangle."
+    },
+    {
+        "name": "Arcturus (Alpha Boötis)",
+        "category": "Double Star",
+        "type": "Orange Giant",
+        "constellation": "Boo",
+        "mag": -0.05,
+        "is_dynamic": False,
+        "ra": 213.915, "dec": 19.182,
+        "eyepiece": "20x / 30x",
+        "eyepiece_badge": "20x (Wide) / 30x (Color)",
+        "eyepiece_detail": "20x or 30x captures the warm topaz glow of the brightest star in the northern celestial hemisphere.",
+        "description": "Ancient K-type orange giant star from the galactic halo, moving through our solar neighborhood at 122 km/s."
+    },
+    {
+        "name": "Capella (Alpha Aurigae)",
+        "category": "Double Star",
+        "type": "Quadruple System",
+        "constellation": "Aur",
+        "mag": 0.08,
+        "is_dynamic": False,
+        "ra": 79.172, "dec": 45.998,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x wide field frames this brilliant golden giant star at the peak of the winter hexagon.",
+        "description": "The northernmost first-magnitude star, comprised of two pairs of binary giant stars orbiting in close synchronization."
+    },
+    {
+        "name": "Aldebaran (Alpha Tauri)",
+        "category": "Double Star",
+        "type": "Red Giant",
+        "constellation": "Tau",
+        "mag": 0.85,
+        "is_dynamic": False,
+        "ra": 68.980, "dec": 16.509,
+        "eyepiece": "20x",
+        "eyepiece_badge": "20x (Wide Field - 2.5° FOV)",
+        "eyepiece_detail": "20x wide field beautifully frames Aldebaran as the vivid reddish eye resting in the V-shaped Hyades cluster.",
+        "description": "The Eye of the Bull. Luminous orange-red giant star foregrounding the famous open cluster Melotte 25 (Hyades)."
+    },
+    {
+        "name": "Antares (Alpha Scorpii)",
+        "category": "Double Star",
+        "type": "Red Supergiant",
+        "constellation": "Sco",
+        "mag": 1.06,
+        "is_dynamic": False,
+        "ra": 247.352, "dec": -26.432,
+        "eyepiece": "20x / 30x",
+        "eyepiece_badge": "20x (Nebula Field) / 30x",
+        "eyepiece_detail": "20x captures the fiery crimson color immersed in the surrounding Rho Ophiuchi nebulous field.",
+        "description": "Heart of the Scorpion. Enormous cool red supergiant star over 700 times larger in diameter than our Sun."
+    }
+]
+
+
+class TonightSkyTourDialog(QDialog):
+    """Tonight's Best Interactive Sky Tour & Curated Celestial Catalog.
+    Computes real-time Alt/Az, filters visible targets (>15°), recommends
+    eyepieces matching 20x, 30x, and 40x magnifications, and provides one-click GoTo.
+    """
+
+    def __init__(self, core: Any, config: Dict[str, Any], night_mode: bool = False, parent: Optional[QWidget] = None, main_window: Optional[Any] = None, weather_service: Optional[Any] = None):
+        # Pass parent=None to QDialog so Windows OS does NOT create an owned-window relationship.
+        # An owned window in Windows is permanently pinned on top of its owner in the Z-order.
+        # Using parent=None with Qt.WindowType.Window creates true independent peer windows
+        # where clicking either window immediately raises and pops it above the other!
+        super().__init__(None, Qt.WindowType.Window)
+        self.main_window = main_window or parent
+        self.core = core
+        self.config = config
+        self.night_mode = night_mode
+        self.weather_service = weather_service or (getattr(self.main_window, 'weather_service', None) if self.main_window else None)
+        self.weather_data: Optional[Dict[str, Any]] = None
+        self.setWindowTitle("Tonight's Best Sky Tour & Curated Catalog")
+        self.resize(980, 660)
+        self.setMinimumSize(820, 520)
+        self.setModal(False)
+        self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
+
+        self.current_category = "Visible"
+        self.filter_text = ""
+        self.sort_mode = "Altitude"
+        self.selected_item = None
+        self._items_data: List[Dict[str, Any]] = []
+
+        self._build_ui()
+        if self.weather_service:
+            self.weather_service.weather_updated.connect(self.update_weather_display)
+            if self.weather_service.latest_data:
+                self.update_weather_display(self.weather_service.latest_data)
+            else:
+                self.weather_service.fetch_async()
+
+        self._refresh_all_targets(force_recalc=True)
+
+        # 1-second real-time position tracking timer
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._on_timer_tick)
+        self.timer.start(1000)
+
+    def _build_ui(self) -> None:
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(14, 14, 14, 14)
+        main_layout.setSpacing(10)
+
+        # 1. Header banner
+        header_card = QFrame()
+        header_card.setProperty("class", "card")
+        header_lay = QHBoxLayout(header_card)
+        header_lay.setContentsMargins(12, 8, 12, 8)
+
+        v_head = QVBoxLayout()
+        v_head.setSpacing(2)
+        lbl_title = QLabel("TONIGHT'S BEST INTERACTIVE SKY TOUR & CURATED CATALOG")
+        lbl_title.setProperty("class", "title")
+        v_head.addWidget(lbl_title)
+
+        lbl_sub = QLabel("Live Astronomical Visibility (>15° Horizon) | Refractor 60mm F/2.8 | Eyepiece Recommendations (20x, 30x, 40x)")
+        lbl_sub.setProperty("class", "subtitle")
+        v_head.addWidget(lbl_sub)
+        header_lay.addLayout(v_head)
+        header_lay.addStretch()
+
+        self.lbl_mount_summary = QLabel("Mount: Az 0.0°, Alt 0.0°")
+        self.lbl_mount_summary.setStyleSheet("font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #5AA9FF;" if not self.night_mode else "font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #FF4D4D;")
+        header_lay.addWidget(self.lbl_mount_summary)
+        main_layout.addWidget(header_card)
+
+        # Live Meteorological Transparency & Cloud Cover Deck
+        self.weather_card = QFrame()
+        self.weather_card.setProperty("class", "card")
+        w_lay = QHBoxLayout(self.weather_card)
+        w_lay.setContentsMargins(12, 6, 12, 6)
+        w_lay.setSpacing(10)
+
+        self.lbl_weather_badge = QLabel("[CHECKING WEATHER...]")
+        self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFAAAA;" if self.night_mode else "font-size: 11px; font-weight: 800; color: #5AA9FF;")
+        w_lay.addWidget(self.lbl_weather_badge)
+
+        self.lbl_weather_desc = QLabel("Querying live Open-Meteo astronomical cloud cover telemetry...")
+        self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #FF4D4D;" if self.night_mode else "font-size: 11px; color: #C8D1DC;")
+        w_lay.addWidget(self.lbl_weather_desc)
+
+        w_lay.addStretch()
+
+        self.lbl_weather_metrics = QLabel("Temp: --.-°C | Humidity: --% | Wind: --.- km/h")
+        self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #AA2222;" if self.night_mode else "font-family: 'Consolas'; font-size: 11px; color: #8892A0;")
+        w_lay.addWidget(self.lbl_weather_metrics)
+
+        self.btn_refresh_weather = QPushButton("Refresh Weather")
+        self.btn_refresh_weather.setToolTip("Query live Open-Meteo cloud cover and astronomical seeing telemetry")
+        self.btn_refresh_weather.clicked.connect(self._refresh_weather_clicked)
+        w_lay.addWidget(self.btn_refresh_weather)
+
+        main_layout.addWidget(self.weather_card)
+
+        # 2. Controls & Filter Bar
+        ctrl_card = QFrame()
+        ctrl_card.setProperty("class", "card")
+        ctrl_lay = QHBoxLayout(ctrl_card)
+        ctrl_lay.setContentsMargins(10, 6, 10, 6)
+        ctrl_lay.setSpacing(8)
+
+        lbl_cat = QLabel("Filter:")
+        lbl_cat.setStyleSheet("font-weight: 700;")
+        ctrl_lay.addWidget(lbl_cat)
+
+        self.btn_grp = QButtonGroup(self)
+        self.tab_buttons: Dict[str, QPushButton] = {}
+        tabs = [
+            ("Visible", "Tonight's Visible (Alt > 15°)"),
+            ("Solar System", "Planets & Moon"),
+            ("Deep Sky", "Deep Sky (Messier)"),
+            ("Double Star", "Double Stars & Giants"),
+            ("All", "All Targets (34)"),
+        ]
+        for cat_key, cat_label in tabs:
+            btn = QPushButton(cat_label)
+            btn.setCheckable(True)
+            if cat_key == "Visible":
+                btn.setChecked(True)
+            btn.clicked.connect(lambda checked, k=cat_key: self._set_category(k))
+            self.btn_grp.addButton(btn)
+            self.tab_buttons[cat_key] = btn
+            ctrl_lay.addWidget(btn)
+
+        ctrl_lay.addSpacing(10)
+
+        # Search box
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("Search name or constellation...")
+        self.search_box.setClearButtonEnabled(True)
+        self.search_box.textChanged.connect(self._on_search_changed)
+        self.search_box.setMaximumWidth(200)
+        ctrl_lay.addWidget(self.search_box)
+
+        # Sort mode combo
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItem("Sort: Highest Altitude (Best Seeing)", "Altitude")
+        self.sort_combo.addItem("Sort: Brightest Magnitude", "Magnitude")
+        self.sort_combo.addItem("Sort: Name (A-Z)", "Name")
+        self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        ctrl_lay.addWidget(self.sort_combo)
+
+        main_layout.addWidget(ctrl_card)
+
+        # 3. Main Splitter: Left Table | Right Details & Eyepiece Card
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Table widget - disable inline cell editing so double-click slews without renaming!
+        self.table = QTableWidget()
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels([
+            "Target Name", "Category", "Const", "Mag", "Altitude", "Azimuth", "Visibility", "Eyepiece"
+        ])
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setColumnWidth(0, 160)
+        self.table.setColumnWidth(1, 110)
+        self.table.setColumnWidth(2, 55)
+        self.table.setColumnWidth(3, 50)
+        self.table.setColumnWidth(4, 75)
+        self.table.setColumnWidth(5, 80)
+        self.table.setColumnWidth(6, 115)
+        self.table.itemSelectionChanged.connect(self._on_row_selected)
+        self.table.doubleClicked.connect(lambda idx: self._start_slew())
+        splitter.addWidget(self.table)
+
+        # Wire global shortcuts in tour window so Ctrl+N toggles night vision even when tour window has focus
+        sc_night = QShortcut(QKeySequence("Ctrl+N"), self)
+        sc_night.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        sc_night.activated.connect(self._toggle_night_from_tour)
+
+        # Right Side: Object Details & Eyepiece Guide Card
+        detail_card = QFrame()
+        detail_card.setProperty("class", "card")
+        detail_card.setMinimumWidth(320)
+        detail_lay = QVBoxLayout(detail_card)
+        detail_lay.setContentsMargins(14, 12, 14, 12)
+        detail_lay.setSpacing(8)
+
+        lbl_det_title = QLabel("TARGET DETAILS & EYEPIECE GUIDE")
+        lbl_det_title.setProperty("class", "section-header")
+        detail_lay.addWidget(lbl_det_title)
+
+        self.lbl_target_name = QLabel("No Target Selected")
+        self.lbl_target_name.setStyleSheet("font-size: 15px; font-weight: 800; color: #FFFFFF;" if not self.night_mode else "font-size: 15px; font-weight: 800; color: #FF6666;")
+        detail_lay.addWidget(self.lbl_target_name)
+
+        self.lbl_target_meta = QLabel("Select an object from the tour list")
+        self.lbl_target_meta.setStyleSheet("font-size: 11px; color: #8892A0;" if not self.night_mode else "font-size: 11px; color: #991F1F;")
+        detail_lay.addWidget(self.lbl_target_meta)
+
+        # Eyepiece Recommendation Banner Card
+        self.eye_card = QFrame()
+        self.eye_card.setStyleSheet("background-color: #172433; border: 1px solid #2B4B6E; border-radius: 4px; padding: 6px;" if not self.night_mode else "background-color: #240505; border: 1px solid #5C0B0B; border-radius: 4px; padding: 6px;")
+        eye_v = QVBoxLayout(self.eye_card)
+        eye_v.setContentsMargins(6, 6, 6, 6)
+        eye_v.setSpacing(4)
+
+        self.lbl_eye_badge = QLabel("RECOMMENDED: --")
+        self.lbl_eye_badge.setStyleSheet("font-size: 12px; font-weight: 800; color: #FFE082;" if not self.night_mode else "font-size: 12px; font-weight: 800; color: #FF9999;")
+        eye_v.addWidget(self.lbl_eye_badge)
+
+        self.lbl_eye_desc = QLabel("Eyepiece matching guidance will appear here.")
+        self.lbl_eye_desc.setWordWrap(True)
+        self.lbl_eye_desc.setStyleSheet("font-size: 11px; color: #C8D1DC;" if not self.night_mode else "font-size: 11px; color: #FFB3B3;")
+        eye_v.addWidget(self.lbl_eye_desc)
+        detail_lay.addWidget(self.eye_card)
+
+        # Coordinates & Seeing Grid
+        self.coords_card = QFrame()
+        self.coords_card.setStyleSheet("background-color: #12151B; border: 1px solid #2B313D; border-radius: 3px;" if not self.night_mode else "background-color: #080101; border: 1px solid #330808; border-radius: 3px;")
+        coords_card = self.coords_card
+        coords_lay = QGridLayout(coords_card)
+        coords_lay.setContentsMargins(8, 6, 8, 6)
+        coords_lay.setSpacing(4)
+
+        coords_lay.addWidget(QLabel("Altitude / Az:"), 0, 0)
+        self.lbl_det_altaz = QLabel("-- / --")
+        self.lbl_det_altaz.setStyleSheet("font-family: 'Consolas'; font-weight: 700; color: #5AA9FF;" if not self.night_mode else "font-family: 'Consolas'; font-weight: 700; color: #FF4D4D;")
+        coords_lay.addWidget(self.lbl_det_altaz, 0, 1)
+
+        coords_lay.addWidget(QLabel("RA / Dec:"), 1, 0)
+        self.lbl_det_radec = QLabel("-- / --")
+        self.lbl_det_radec.setStyleSheet("font-family: 'Consolas'; font-weight: 700; color: #DCE2EB;" if not self.night_mode else "font-family: 'Consolas'; font-weight: 700; color: #FF3333;")
+        coords_lay.addWidget(self.lbl_det_radec, 1, 1)
+
+        coords_lay.addWidget(QLabel("Slew Duration:"), 2, 0)
+        self.lbl_det_slew = QLabel("--")
+        self.lbl_det_slew.setStyleSheet("font-weight: 700; color: #8CD68C;" if not self.night_mode else "font-weight: 700; color: #FFAAAA;")
+        coords_lay.addWidget(self.lbl_det_slew, 2, 1)
+
+        coords_lay.addWidget(QLabel("Sun Distance:"), 3, 0)
+        self.lbl_det_sun = QLabel("--")
+        self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #8CD68C;" if not self.night_mode else "font-weight: 700; color: #FFAAAA;")
+        coords_lay.addWidget(self.lbl_det_sun, 3, 1)
+
+        detail_lay.addWidget(coords_card)
+
+        # Astronomical Description Text
+        self.txt_desc = QTextEdit()
+        self.txt_desc.setReadOnly(True)
+        self.txt_desc.setStyleSheet("background-color: #0E1015; border: 1px solid #242832; color: #A0ABB8; font-size: 11px;" if not self.night_mode else "background-color: #060101; border: 1px solid #2E0505; color: #FF6666; font-size: 11px;")
+        detail_lay.addWidget(self.txt_desc)
+
+        # Action GoTo Button
+        self.btn_slew = QPushButton("Slew to Target (GoTo)")
+        self.btn_slew.setProperty("class", "primary")
+        self.btn_slew.setEnabled(False)
+        self.btn_slew.setToolTip("Command telescope to slew to this target and start sidereal tracking")
+        self.btn_slew.clicked.connect(self._start_slew)
+        detail_lay.addWidget(self.btn_slew)
+
+        splitter.addWidget(detail_card)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        main_layout.addWidget(splitter)
+
+        # 4. Bottom status bar
+        bot_lay = QHBoxLayout()
+        self.lbl_status = QLabel("Ready")
+        self.lbl_status.setStyleSheet("font-size: 11px; color: #8892A0;" if not self.night_mode else "font-size: 11px; color: #991F1F;")
+        bot_lay.addWidget(self.lbl_status)
+        bot_lay.addStretch()
+
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(self.accept)
+        bot_lay.addWidget(btn_close)
+        main_layout.addLayout(bot_lay)
+
+    def _set_category(self, cat: str) -> None:
+        self.current_category = cat
+        self._refresh_table_view()
+
+    def _on_search_changed(self, text: str) -> None:
+        self.filter_text = text.strip().lower()
+        self._refresh_table_view()
+
+    def _on_sort_changed(self, idx: int) -> None:
+        self.sort_mode = self.sort_combo.currentData() or "Altitude"
+        self._refresh_table_view()
+
+    def _on_timer_tick(self) -> None:
+        self._refresh_all_targets(force_recalc=False)
+
+    def _refresh_all_targets(self, force_recalc: bool = False) -> None:
+        if not self.core:
+            return
+
+        t_now = self.core.get_time()
+        lat = float(self.config.get("latitude_deg", 12.84))
+        lon = float(self.config.get("longitude_deg", 80.15))
+        use_refr = bool(self.config.get("apply_refraction", True))
+        is_j2000_mode = (self.config.get("epoch", "J2000") == "J2000")
+
+        # Solar position for keepout
+        s_ra, s_dec = sun_radec(t_now) if sun_radec else (0.0, 0.0)
+        keepout_limit = float(self.config.get("sun_keepout_deg", 15.0))
+
+        # Mount current Alt/Az
+        m_alt, m_az = self.core.get_telescope_altaz()
+        self.lbl_mount_summary.setText(f"Mount: Az {m_az:.1f}°, Alt {m_alt:.1f}°")
+
+        calc_list: List[Dict[str, Any]] = []
+
+        for item in TONIGHT_BEST_CATALOG:
+            entry = dict(item)
+            # Calculate coordinates
+            if entry.get("is_dynamic", False):
+                dyn_body = entry.get("dynamic_body", "")
+                if dyn_body == "Moon" and moon_radec:
+                    ra_calc, dec_calc = moon_radec(t_now)
+                elif dyn_body in ("Venus", "Mars", "Jupiter", "Saturn") and planet_radec:
+                    ra_calc, dec_calc = planet_radec(dyn_body, t_now)
+                else:
+                    ra_calc, dec_calc = entry["ra"], entry["dec"]
+                ra_date, dec_date = ra_calc, dec_calc
+                entry["calc_ra"] = ra_calc
+                entry["calc_dec"] = dec_calc
+            else:
+                ra_2k, dec_2k = entry["ra"], entry["dec"]
+                if precess_j2000_to_date:
+                    ra_date, dec_date = precess_j2000_to_date(ra_2k, dec_2k, t_now)
+                else:
+                    ra_date, dec_date = ra_2k, dec_2k
+                entry["calc_ra"] = ra_2k if is_j2000_mode else ra_date
+                entry["calc_dec"] = dec_2k if is_j2000_mode else dec_date
+
+            # Alt / Az calculation
+            if radec_to_altaz:
+                alt, az = radec_to_altaz(ra_date, dec_date, lat, lon, t_now, apply_refraction=use_refr)
+            else:
+                alt, az = 0.0, 0.0
+
+            entry["alt"] = alt
+            entry["az"] = az
+
+            # Compass quadrant
+            quadrants = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                         "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+            q_idx = int(((az + 11.25) % 360.0) / 22.5)
+            entry["compass"] = quadrants[q_idx]
+
+            # Sun separation
+            sep_sun = separation_deg(ra_date, dec_date, s_ra, s_dec) if separation_deg else 99.0
+            entry["sun_sep"] = sep_sun
+
+            # Visibility classification
+            has_filter = getattr(self.core, 'solar_filter_confirmed', False) or self.config.get("solar_filter_installed", False)
+            if sep_sun < keepout_limit and not has_filter:
+                entry["visibility"] = "SUN DANGER"
+                entry["is_visible"] = False
+            elif alt > 15.0:
+                entry["visibility"] = f"VISIBLE ({alt:.0f}°)"
+                entry["is_visible"] = True
+            elif alt >= 0.0:
+                entry["visibility"] = f"LOW ({alt:.0f}°)"
+                entry["is_visible"] = False
+            else:
+                entry["visibility"] = "BELOW HORIZON"
+                entry["is_visible"] = False
+
+            calc_list.append(entry)
+
+        self._items_data = calc_list
+        self._refresh_table_view()
+
+    def _refresh_table_view(self) -> None:
+        filtered: List[Dict[str, Any]] = []
+
+        for item in self._items_data:
+            # Category filter
+            if self.current_category == "Visible" and not item["is_visible"]:
+                continue
+            elif self.current_category == "Solar System" and item["category"] != "Solar System":
+                continue
+            elif self.current_category == "Deep Sky" and item["category"] != "Deep Sky":
+                continue
+            elif self.current_category == "Double Star" and item["category"] != "Double Star":
+                continue
+
+            # Text search filter
+            if self.filter_text:
+                haystack = f"{item['name']} {item['type']} {item['constellation']}".lower()
+                if self.filter_text not in haystack:
+                    continue
+
+            filtered.append(item)
+
+        # Sorting
+        if self.sort_mode == "Altitude":
+            filtered.sort(key=lambda x: x["alt"], reverse=True)
+        elif self.sort_mode == "Magnitude":
+            filtered.sort(key=lambda x: x["mag"])
+        elif self.sort_mode == "Name":
+            filtered.sort(key=lambda x: x["name"])
+
+        # Populate table
+        prev_selected_name = self.selected_item["name"] if self.selected_item else None
+        self.table.blockSignals(True)
+        self.table.setRowCount(len(filtered))
+
+        row_to_reselect = -1
+        for row, it in enumerate(filtered):
+            def _make_item(val: str, it_ref: Optional[Dict[str, Any]] = None) -> QTableWidgetItem:
+                item = QTableWidgetItem(val)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if it_ref:
+                    item.setData(Qt.ItemDataRole.UserRole, it_ref)
+                return item
+
+            # Target Name
+            self.table.setItem(row, 0, _make_item(it["name"], it))
+
+            # Category / Type
+            self.table.setItem(row, 1, _make_item(it["type"]))
+
+            # Constellation
+            self.table.setItem(row, 2, _make_item(it["constellation"]))
+
+            # Magnitude
+            mag_str = f"{it['mag']:+.1f}" if it['mag'] <= 0 else f"{it['mag']:.1f}"
+            self.table.setItem(row, 3, _make_item(mag_str))
+
+            # Altitude
+            alt_item = _make_item(f"{it['alt']:+.1f}°")
+            if it["alt"] > 15.0:
+                alt_item.setForeground(QColor("#43A047") if not self.night_mode else QColor("#FF4D4D"))
+            elif it["alt"] >= 0.0:
+                alt_item.setForeground(QColor("#D69E35") if not self.night_mode else QColor("#AA3333"))
+            else:
+                alt_item.setForeground(QColor("#77808D") if not self.night_mode else QColor("#551111"))
+            self.table.setItem(row, 4, alt_item)
+
+            # Azimuth
+            self.table.setItem(row, 5, _make_item(f"{it['az']:05.1f}° {it['compass']}"))
+
+            # Visibility with live cloud-cover awareness
+            vis_raw = it["visibility"]
+            cloud_pct = self.weather_data.get("cloud_cover", 0) if self.weather_data else 0
+            if "VISIBLE" in vis_raw:
+                if cloud_pct >= 80:
+                    vis_text = f"OBSCURED ({cloud_pct}% CLOUD)"
+                    vis_col = QColor("#FF6666") if self.night_mode else QColor("#D69E35")
+                elif cloud_pct >= 50:
+                    vis_text = f"VISIBLE ({cloud_pct}% CLOUD)"
+                    vis_col = QColor("#FF9944") if self.night_mode else QColor("#D6B535")
+                else:
+                    vis_text = vis_raw
+                    vis_col = QColor("#FF4D4D") if self.night_mode else QColor("#43A047")
+            elif "SUN" in vis_raw:
+                vis_text = vis_raw
+                vis_col = QColor("#FF2222") if self.night_mode else QColor("#E53935")
+            elif "LOW" in vis_raw:
+                vis_text = vis_raw
+                vis_col = QColor("#AA3333") if self.night_mode else QColor("#D69E35")
+            else:
+                vis_text = vis_raw
+                vis_col = QColor("#551111") if self.night_mode else QColor("#77808D")
+
+            vis_item = _make_item(vis_text)
+            vis_item.setForeground(vis_col)
+            self.table.setItem(row, 6, vis_item)
+
+            # Eyepiece
+            eye_item = _make_item(it["eyepiece"])
+            eye_item.setForeground(QColor("#5AA9FF") if not self.night_mode else QColor("#FF8888"))
+            self.table.setItem(row, 7, eye_item)
+
+            if prev_selected_name and it["name"] == prev_selected_name:
+                row_to_reselect = row
+
+        self.table.blockSignals(False)
+
+        if row_to_reselect >= 0:
+            self.table.selectRow(row_to_reselect)
+        elif len(filtered) > 0 and self.selected_item is None:
+            self.table.selectRow(0)
+
+        # Update status message
+        vis_count = sum(1 for it in self._items_data if it["is_visible"])
+        self.lbl_status.setText(f"Showing {len(filtered)} objects ({vis_count} visible above 15° horizon)")
+
+    def _on_row_selected(self) -> None:
+        rows = self.table.selectedItems()
+        if not rows:
+            return
+        row = rows[0].row()
+        item_0 = self.table.item(row, 0)
+        if not item_0:
+            return
+        data = item_0.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+
+        self.selected_item = data
+        self._update_details_panel(data)
+
+    def _update_details_panel(self, it: Dict[str, Any]) -> None:
+        self.lbl_target_name.setText(it["name"])
+        self.lbl_target_meta.setText(f"{it['type']} | Constellation: {it['constellation']} | Visual Mag: {it['mag']:+.1f}")
+
+        # Eyepiece card
+        self.lbl_eye_badge.setText(f"RECOMMENDED EYEPIECE: {it['eyepiece_badge']}")
+        self.lbl_eye_desc.setText(it["eyepiece_detail"])
+
+        # Coordinates
+        self.lbl_det_altaz.setText(f"Alt {it['alt']:+.1f}°, Az {it['az']:.1f}° ({it['compass']})")
+        self.lbl_det_radec.setText(f"RA {it['calc_ra']:.2f}°, Dec {it['calc_dec']:+.2f}°")
+
+        # Slew estimate
+        m_alt, m_az = self.core.get_telescope_altaz()
+        d_alt = abs(it["alt"] - m_alt)
+        d_az = abs((it["az"] - m_az + 180.0) % 360.0 - 180.0)
+        slew_dist = math.sqrt(d_alt * d_alt + d_az * d_az)
+        slew_sec = slew_dist / 2.0 # Approx 2 deg/s constant velocity slew
+        self.lbl_det_slew.setText(f"{slew_dist:.1f}° angular offset (~{slew_sec:.0f}s slew)")
+
+        # Sun distance
+        has_filter = getattr(self.core, 'solar_filter_confirmed', False) or self.config.get("solar_filter_installed", False)
+        if it["sun_sep"] < float(self.config.get("sun_keepout_deg", 15.0)):
+            if has_filter:
+                self.lbl_det_sun.setText(f"{it['sun_sep']:.1f}° [FILTER ATTACHED]")
+                self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #FFE082;" if not self.night_mode else "font-weight: 700; color: #FF9999;")
+            else:
+                self.lbl_det_sun.setText(f"{it['sun_sep']:.1f}° [DANGER < 15°]")
+                self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #FF6666;" if not self.night_mode else "font-weight: 700; color: #FF2222;")
+        else:
+            self.lbl_det_sun.setText(f"{it['sun_sep']:.1f}° [Safe]")
+            self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #8CD68C;" if not self.night_mode else "font-weight: 700; color: #FFAAAA;")
+
+        self.txt_desc.setText(it["description"])
+        self.btn_slew.setEnabled(True)
+
+    def set_night_mode(self, enabled: bool) -> None:
+        self.night_mode = enabled
+        self.setStyleSheet(NIGHT_VISION_STYLE if enabled else SCIENTIFIC_STYLE)
+        if hasattr(self, "lbl_mount_summary"):
+            self.lbl_mount_summary.setStyleSheet("font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #FF4D4D;" if enabled else "font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #5AA9FF;")
+        if hasattr(self, "lbl_target_name"):
+            self.lbl_target_name.setStyleSheet("font-size: 15px; font-weight: 800; color: #FF6666;" if enabled else "font-size: 15px; font-weight: 800; color: #FFFFFF;")
+        if hasattr(self, "lbl_target_meta"):
+            self.lbl_target_meta.setStyleSheet("font-size: 11px; color: #991F1F;" if enabled else "font-size: 11px; color: #8892A0;")
+        if hasattr(self, "eye_card"):
+            self.eye_card.setStyleSheet("background-color: #240505; border: 1px solid #5C0B0B; border-radius: 4px; padding: 6px;" if enabled else "background-color: #172433; border: 1px solid #2B4B6E; border-radius: 4px; padding: 6px;")
+        if hasattr(self, "lbl_eye_badge"):
+            self.lbl_eye_badge.setStyleSheet("font-size: 12px; font-weight: 800; color: #FF9999;" if enabled else "font-size: 12px; font-weight: 800; color: #FFE082;")
+        if hasattr(self, "lbl_eye_desc"):
+            self.lbl_eye_desc.setStyleSheet("font-size: 11px; color: #FFB3B3;" if enabled else "font-size: 11px; color: #C8D1DC;")
+        if hasattr(self, "coords_card"):
+            self.coords_card.setStyleSheet("background-color: #080101; border: 1px solid #330808; border-radius: 3px;" if enabled else "background-color: #12151B; border: 1px solid #2B313D; border-radius: 3px;")
+        if hasattr(self, "lbl_det_altaz"):
+            self.lbl_det_altaz.setStyleSheet("font-family: 'Consolas'; font-weight: 700; color: #FF4D4D;" if enabled else "font-family: 'Consolas'; font-weight: 700; color: #5AA9FF;")
+        if hasattr(self, "lbl_det_radec"):
+            self.lbl_det_radec.setStyleSheet("font-family: 'Consolas'; font-weight: 700; color: #FF3333;" if enabled else "font-family: 'Consolas'; font-weight: 700; color: #DCE2EB;")
+        if hasattr(self, "lbl_det_slew"):
+            self.lbl_det_slew.setStyleSheet("font-weight: 700; color: #FFAAAA;" if enabled else "font-weight: 700; color: #8CD68C;")
+        if hasattr(self, "txt_desc"):
+            self.txt_desc.setStyleSheet("background-color: #060101; border: 1px solid #2E0505; color: #FF6666; font-size: 11px;" if enabled else "background-color: #0E1015; border: 1px solid #242832; color: #A0ABB8; font-size: 11px;")
+        if hasattr(self, "lbl_status"):
+            self.lbl_status.setStyleSheet("font-size: 11px; color: #991F1F;" if enabled else "font-size: 11px; color: #8892A0;")
+        self._style_weather_card()
+        self._refresh_all_targets(force_recalc=True)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if hasattr(self, "timer") and self.timer.isActive():
+            self.timer.stop()
+        event.accept()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if hasattr(self, "timer") and not self.timer.isActive():
+            self.timer.start(1000)
+
+    def _refresh_weather_clicked(self) -> None:
+        if self.weather_service:
+            self.weather_service.fetch_async()
+        elif self.main_window and hasattr(self.main_window, "weather_service") and self.main_window.weather_service:
+            self.main_window.weather_service.fetch_async()
+        if hasattr(self, "lbl_weather_badge"):
+            self.lbl_weather_badge.setText("[CHECKING...]")
+            self.lbl_weather_desc.setText("Fetching updated cloud cover and transparency data...")
+
+    def update_weather_display(self, data: Dict[str, Any]) -> None:
+        self.weather_data = data
+        cloud = data.get("cloud_cover", 0)
+        temp = data.get("temperature_c", 0.0)
+        hum = data.get("humidity_pct", 0)
+        wind = data.get("wind_kmh", 0.0)
+        badge = data.get("badge", "[WEATHER]")
+        obs = data.get("obs_status", "")
+
+        if hasattr(self, "lbl_weather_badge"):
+            self.lbl_weather_badge.setText(f"{badge} {cloud}% CLOUDS")
+        if hasattr(self, "lbl_weather_desc"):
+            if cloud >= 80:
+                desc_text = f"Local cloud deck obscuring line of sight ({obs}) — Direct optical observation obstructed"
+            elif cloud >= 50:
+                desc_text = f"Broken clouds ({obs}) — Intermittent observing windows between cloud gaps"
+            elif cloud >= 25:
+                desc_text = f"Scattered clouds ({obs}) — Good visibility with occasional drifting cloud layers"
+            else:
+                desc_text = f"Clear sky ({obs}) — Pristine optical transparency for planetary & deep-sky observation"
+            self.lbl_weather_desc.setText(desc_text)
+        if hasattr(self, "lbl_weather_metrics"):
+            self.lbl_weather_metrics.setText(f"Temp: {temp:.1f}°C | Humidity: {hum}% | Wind: {wind:.1f} km/h")
+
+        self._style_weather_card()
+        self._refresh_table_view()
+
+    def _style_weather_card(self) -> None:
+        if not hasattr(self, "weather_card"):
+            return
+        cloud = self.weather_data.get("cloud_cover", 0) if self.weather_data else 0
+        if self.night_mode:
+            self.weather_card.setStyleSheet("background-color: #240505; border: 1px solid #5C0B0B; border-radius: 4px; padding: 4px;")
+            self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFAAAA;")
+            self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #FF4D4D;")
+            self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #FF6666;")
+        else:
+            if cloud >= 80:
+                self.weather_card.setStyleSheet("background-color: #2A1F12; border: 1px solid #6E4F28; border-radius: 4px; padding: 4px;")
+                self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFE082;")
+                self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #FFD4A8;")
+                self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #D69E35;")
+            else:
+                self.weather_card.setStyleSheet("background-color: #121E19; border: 1px solid #234D3A; border-radius: 4px; padding: 4px;")
+                self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #8CD68C;")
+                self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #C8E6C9;")
+                self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #8892A0;")
+
+    def _toggle_night_from_tour(self) -> None:
+        if self.main_window and hasattr(self.main_window, "toggle_night_mode"):
+            self.main_window.toggle_night_mode()
+        else:
+            self.set_night_mode(not self.night_mode)
+
+    def _start_slew(self) -> None:
+        if not self.selected_item or not self.core:
+            return
+
+        it = self.selected_item
+        ra = it["calc_ra"]
+        dec = it["calc_dec"]
+        is_j2000 = not it.get("is_dynamic", False)
+
+        # Notify main window that a slew has started so arrival chime can fire
+        target_win = self.main_window or self.parent()
+        if target_win and hasattr(target_win, "_was_slewing"):
+            target_win._was_slewing = True
+
+        self.core.on_goto_requested(ra, dec, is_j2000=is_j2000, target_name=it["name"])
+        self.lbl_status.setText(f"GoTo active: Slewing to {it['name']}... (Mount active)")
+        self.lbl_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF4D4D;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047;")
+
+
+# ==============================================================================
 # TARGET GOTO & CELESTIAL CATALOG DIALOG
 # ==============================================================================
 
@@ -1372,13 +2992,20 @@ class GoToDialog(QDialog):
         ("Hercules Cluster (M13)", 250.422, 36.460),
     ]
 
-    def __init__(self, core: Any, config: Dict[str, Any], parent: Optional[QWidget] = None):
+    def __init__(self, core: Any = None, config: Optional[Dict[str, Any]] = None, night_mode: bool = False, parent: Optional[QWidget] = None, *args, **kwargs):
+        if parent is None and "parent" in kwargs:
+            parent = kwargs["parent"]
+        if core is None and "core" in kwargs:
+            core = kwargs["core"]
+        if config is None and "config" in kwargs:
+            config = kwargs["config"]
         super().__init__(parent)
         self.core = core
-        self.config = config
+        self.config = config or {}
+        self.night_mode = night_mode
         self.setWindowTitle("Manual GoTo Target & Celestial Catalog")
         self.resize(480, 360)
-        self.setStyleSheet(SCIENTIFIC_STYLE)
+        self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1640,7 +3267,14 @@ class AstroTelescopeWindow(QMainWindow):
             QApplication.setWindowIcon(app_icon)
         self.resize(1280, 880)
         self.setMinimumSize(1080, 780)
-        self.setStyleSheet(SCIENTIFIC_STYLE)
+
+        # State: Night mode, audio cues, and slew arrival tracking
+        self.night_mode: bool = bool(self.config.get("night_mode", False))
+        self.audio_enabled: bool = bool(self.config.get("audio_cues_enabled", True))
+        self._was_slewing: bool = False
+        self._was_moving: bool = False
+        self.tour_window: Optional[TonightSkyTourDialog] = None
+        self.setStyleSheet(NIGHT_VISION_STYLE if self.night_mode else SCIENTIFIC_STYLE)
 
         self.selected_jog_speed: str = "medium"
         self.follower: Any = StellariumHttpFollower(self.core, require_explicit_goto=True) if (StellariumHttpFollower and self.core) else None
@@ -1667,6 +3301,12 @@ class AstroTelescopeWindow(QMainWindow):
         if self.core:
             self.core.solar_warning_callback = self._prompt_solar_warning
             self.core.solar_filter_confirmed = False
+
+        # Live Open-Meteo astronomical weather & seeing service
+        self.weather_service = LiveWeatherService(self.config, self)
+        self.weather_service.weather_updated.connect(self._on_weather_updated)
+        self.weather_service.weather_error.connect(lambda err: self.log_message("WARNING", f"Weather fetch: {err}"))
+        self.weather_service.fetch_async()
 
         self._build_interface()
         self._setup_shortcuts()
@@ -1729,8 +3369,9 @@ class AstroTelescopeWindow(QMainWindow):
         conn_box = QHBoxLayout()
         conn_box.setSpacing(6)
 
-        lbl_p = QLabel("Serial Port:")
-        lbl_p.setStyleSheet("font-size: 11px; color: #8892A0;")
+        self.lbl_p = QLabel("Serial Port:")
+        lbl_p = self.lbl_p
+        lbl_p.setStyleSheet("font-size: 11px; color: #8892A0;" if not self.night_mode else "font-size: 11px; color: #AA2222;")
         conn_box.addWidget(lbl_p)
 
         self.port_combo = QComboBox()
@@ -1768,6 +3409,12 @@ class AstroTelescopeWindow(QMainWindow):
         self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #D69E35; background: #262118; padding: 4px 8px; border: 1px solid #4D3D1F; border-radius: 3px;")
         status_box.addWidget(self.lbl_stellarium_status)
 
+        self.btn_weather = QPushButton("[WEATHER: CHECKING...]")
+        self.btn_weather.setToolTip("Query live Open-Meteo astronomical cloud cover & seeing telemetry")
+        self.btn_weather.clicked.connect(self._refresh_weather_clicked)
+        status_box.addWidget(self.btn_weather)
+        self._style_weather_btn()
+
         layout.addLayout(status_box)
 
         btn_settings = QPushButton("Settings")
@@ -1778,6 +3425,19 @@ class AstroTelescopeWindow(QMainWindow):
         btn_help.clicked.connect(self._open_help)
         layout.addWidget(btn_help)
 
+        self.btn_night_mode = QPushButton("Night Vision: ON" if self.night_mode else "Night Vision")
+        if self.night_mode:
+            self.btn_night_mode.setStyleSheet("background-color: #660A0A; border-color: #991414; color: #FFB3B3; font-weight: 700;")
+        self.btn_night_mode.setToolTip("Toggle pure-red night-vision mode to preserve dark adaptation (Ctrl+N)")
+        self.btn_night_mode.clicked.connect(self.toggle_night_mode)
+        layout.addWidget(self.btn_night_mode)
+
+        chk_audio = QCheckBox("Audio")
+        chk_audio.setChecked(bool(self.audio_enabled))
+        chk_audio.setToolTip("Acoustic feedback for slews, arrivals, and emergency stop")
+        chk_audio.toggled.connect(self._on_audio_toggled)
+        layout.addWidget(chk_audio)
+
         self.btn_estop = QPushButton("STOP")
         self.btn_estop.setProperty("class", "stop-btn")
         self.btn_estop.setToolTip("Emergency Stop (Spacebar / Esc)")
@@ -1787,13 +3447,15 @@ class AstroTelescopeWindow(QMainWindow):
         return header
 
     def _create_safety_strip(self) -> QWidget:
-        strip = QFrame()
-        strip.setStyleSheet("background-color: #381B1B; border-bottom: 1px solid #4D2626;")
+        self.safety_strip = QFrame()
+        strip = self.safety_strip
+        strip.setStyleSheet("background-color: #381B1B; border-bottom: 1px solid #4D2626;" if not self.night_mode else "background-color: #240505; border-bottom: 1px solid #4D0A0A;")
         layout = QHBoxLayout(strip)
         layout.setContentsMargins(14, 3, 14, 3)
 
-        lbl_warn = QLabel("CAUTION: NEVER POINT TELESCOPE AT OR NEAR THE SUN WITHOUT A CERTIFIED SOLAR FILTER")
-        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #F2C2C2;")
+        self.lbl_warn = QLabel("CAUTION: NEVER POINT TELESCOPE AT OR NEAR THE SUN WITHOUT A CERTIFIED SOLAR FILTER")
+        lbl_warn = self.lbl_warn
+        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #F2C2C2;" if not self.night_mode else "font-size: 10px; font-weight: 700; color: #FF3333;")
         layout.addWidget(lbl_warn)
 
         layout.addStretch()
@@ -1831,8 +3493,9 @@ class AstroTelescopeWindow(QMainWindow):
         head_box.addWidget(lbl_title)
         head_box.addStretch()
 
-        lbl_legend = QLabel("Blue: Mount Reticle  |  Amber: Target  |  Yellow: Sun")
-        lbl_legend.setStyleSheet("font-size: 10px; color: #8892A0;")
+        self.lbl_radar_legend = QLabel("Blue: Mount Reticle  |  Amber: Target  |  Yellow: Sun" if not self.night_mode else "Bright Red: Scope | Dotted Red: Target | Dark Crimson: Sun")
+        lbl_legend = self.lbl_radar_legend
+        lbl_legend.setStyleSheet("font-size: 10px; color: #8892A0;" if not self.night_mode else "font-size: 10px; color: #AA2222;")
         head_box.addWidget(lbl_legend)
         radar_layout.addLayout(head_box)
 
@@ -2131,11 +3794,11 @@ class AstroTelescopeWindow(QMainWindow):
         btn_zero.clicked.connect(self._confirm_zero)
         act_grid.addWidget(btn_zero, 2, 1)
 
-        btn_manual_goto = QPushButton("Target GoTo (Catalog)...")
-        btn_manual_goto.setProperty("class", "primary")
-        btn_manual_goto.setToolTip("Select celestial targets from catalog or input custom coordinates for constant-velocity slew")
-        btn_manual_goto.clicked.connect(self._open_goto_dialog)
-        act_grid.addWidget(btn_manual_goto, 3, 0, 1, 2)
+        btn_sky_tour = QPushButton("Tonight's Best Sky Tour...")
+        btn_sky_tour.setProperty("class", "primary")
+        btn_sky_tour.setToolTip("Interactive celestial tour of visible targets with 20x/30x/40x eyepiece recommendations (Ctrl+T)")
+        btn_sky_tour.clicked.connect(self._open_sky_tour)
+        act_grid.addWidget(btn_sky_tour, 3, 0, 1, 2)
 
         act_layout.addLayout(act_grid)
 
@@ -2146,9 +3809,10 @@ class AstroTelescopeWindow(QMainWindow):
         self.lbl_cable_wrap.setStyleSheet("font-size: 11px; font-weight: 600; color: #88C0FF;")
         cable_box.addWidget(self.lbl_cable_wrap)
 
-        btn_unwind = QPushButton("Unwind (0°)")
+        self.btn_unwind = QPushButton("Unwind (0°)")
+        btn_unwind = self.btn_unwind
         btn_unwind.setToolTip("Slew Azimuth to 0° True North to untangle cables")
-        btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; border-radius: 3px;")
+        btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; border-radius: 3px;" if not self.night_mode else "font-size: 10px; padding: 3px 8px; background: #260505; border: 1px solid #4D0A0A; color: #FFAAAA; border-radius: 3px;")
         btn_unwind.clicked.connect(self._unwind_cable)
         cable_box.addWidget(btn_unwind)
 
@@ -2242,8 +3906,9 @@ class AstroTelescopeWindow(QMainWindow):
         return col
 
     def _create_console_deck(self) -> QWidget:
-        deck = QFrame()
-        deck.setStyleSheet("background-color: #0E1015; border-top: 1px solid #252A34;")
+        self.console_deck = QFrame()
+        deck = self.console_deck
+        deck.setStyleSheet("background-color: #0E1015; border-top: 1px solid #252A34;" if not self.night_mode else "background-color: #050000; border-top: 1px solid #330808;")
         layout = QVBoxLayout(deck)
         layout.setContentsMargins(14, 6, 14, 8)
         layout.setSpacing(4)
@@ -2302,22 +3967,141 @@ class AstroTelescopeWindow(QMainWindow):
         if self.core:
             self.core.jog(direction, self.selected_jog_speed)
 
+    def toggle_night_mode(self) -> None:
+        self.night_mode = not self.night_mode
+        self.config["night_mode"] = self.night_mode
+        if hasattr(self.config, "save"):
+            self.config.save()
+        self._apply_active_theme()
+
+    def _refresh_weather_clicked(self) -> None:
+        if hasattr(self, "weather_service") and self.weather_service:
+            self.weather_service.fetch_async()
+        if hasattr(self, "btn_weather"):
+            self.btn_weather.setText("[CHECKING...]")
+
+    def _on_weather_updated(self, data: Dict[str, Any]) -> None:
+        if hasattr(self, "weather_service") and self.weather_service:
+            self.weather_service.latest_data = data
+        if not hasattr(self, "btn_weather"):
+            return
+        badge = data.get("badge", "[WEATHER]")
+        cloud = data.get("cloud_cover", 0)
+        temp = data.get("temperature_c", 0.0)
+        hum = data.get("humidity_pct", 0)
+        wind = data.get("wind_kmh", 0.0)
+        vis = data.get("visibility_km", 0.0)
+        cond = data.get("condition", "Unknown")
+        obs = data.get("obs_status", "")
+
+        self.btn_weather.setText(f"{badge} {cloud}% CLOUD | {temp:.1f}°C")
+        self.btn_weather.setToolTip(
+            f"Live Astronomical Weather & Seeing (Open-Meteo)\n"
+            f"Status: {obs} ({cond})\n"
+            f"Cloud Cover: {cloud}%\n"
+            f"Temperature: {temp:.1f}°C | Humidity: {hum}%\n"
+            f"Wind: {wind:.1f} km/h | Visibility: {vis:.1f} km\n"
+            f"Last Updated: {data.get('updated_at', '--:--')}\n"
+            f"(Click to refresh now)"
+        )
+        self._style_weather_btn()
+        if hasattr(self, "tour_window") and self.tour_window:
+            self.tour_window.update_weather_display(data)
+
+    def _style_weather_btn(self) -> None:
+        if not hasattr(self, "btn_weather"):
+            return
+        data = self.weather_service.latest_data if hasattr(self, "weather_service") and self.weather_service else None
+        cloud = data.get("cloud_cover", 0) if data else 0
+        if self.night_mode:
+            if cloud >= 80:
+                self.btn_weather.setStyleSheet("background-color: #3B0808; border: 1px solid #730E0E; color: #FFAAAA; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
+            else:
+                self.btn_weather.setStyleSheet("background-color: #240505; border: 1px solid #4D0A0A; color: #FF6666; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
+        else:
+            if cloud >= 80:
+                self.btn_weather.setStyleSheet("background-color: #2A1F12; border: 1px solid #6E4F28; color: #FFE082; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
+            else:
+                self.btn_weather.setStyleSheet("background-color: #172433; border: 1px solid #2B4B6E; color: #5AA9FF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
+
+    def _apply_active_theme(self) -> None:
+        nm = self.night_mode
+        self.setStyleSheet(NIGHT_VISION_STYLE if nm else SCIENTIFIC_STYLE)
+        self.radar_widget.set_night_mode(nm)
+
+        if hasattr(self, "btn_night_mode"):
+            self.btn_night_mode.setText("Night Vision: ON" if nm else "Night Vision")
+            self.btn_night_mode.setStyleSheet("background-color: #660A0A; border-color: #991414; color: #FFB3B3; font-weight: 700;" if nm else "")
+
+        if hasattr(self, "safety_strip"):
+            self.safety_strip.setStyleSheet("background-color: #240505; border-bottom: 1px solid #4D0A0A;" if nm else "background-color: #381B1B; border-bottom: 1px solid #4D2626;")
+        if hasattr(self, "lbl_warn"):
+            self.lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF3333;" if nm else "font-size: 10px; font-weight: 700; color: #F2C2C2;")
+        if hasattr(self, "chk_solar_filter"):
+            self.chk_solar_filter.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF5555;" if nm else "font-size: 10px; font-weight: 700; color: #FFE082;")
+
+        if hasattr(self, "lbl_radar_legend"):
+            self.lbl_radar_legend.setText("Bright Red: Scope | Dotted Red: Target | Dark Crimson: Sun" if nm else "Blue: Mount Reticle  |  Amber: Target  |  Yellow: Sun")
+            self.lbl_radar_legend.setStyleSheet("font-size: 10px; color: #AA2222;" if nm else "font-size: 10px; color: #8892A0;")
+
+        if hasattr(self, "lbl_cable_wrap"):
+            self.lbl_cable_wrap.setStyleSheet("font-size: 11px; font-weight: 600; color: #FF4D4D;" if nm else "font-size: 11px; font-weight: 600; color: #88C0FF;")
+        if hasattr(self, "btn_unwind"):
+            self.btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #260505; border: 1px solid #4D0A0A; color: #FFAAAA; border-radius: 3px;" if nm else "font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; color: #DCE2EB; border-radius: 3px;")
+        if hasattr(self, "lbl_foc_pos"):
+            self.lbl_foc_pos.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #FF4D4D; font-weight: 600;" if nm else "font-family: 'Consolas'; font-size: 11px; color: #88B0D8; font-weight: 600;")
+        if hasattr(self, "console_deck"):
+            self.console_deck.setStyleSheet("background-color: #050000; border-top: 1px solid #330808;" if nm else "background-color: #0E1015; border-top: 1px solid #252A34;")
+
+        if hasattr(self, "lbl_p"):
+            self.lbl_p.setStyleSheet("font-size: 11px; color: #AA2222;" if nm else "font-size: 11px; color: #8892A0;")
+
+        # Tracking rate buttons styling
+        cur_rate = getattr(self.core, "tracking_rate", "Sidereal") if self.core else "Sidereal"
+        self._set_tracking_rate(cur_rate)
+
+        # Satellite follow button
+        if hasattr(self, "btn_satellite_follow"):
+            is_active = hasattr(self, "follower") and self.follower and self.follower.is_active
+            if is_active:
+                self.btn_satellite_follow.setStyleSheet("background-color: #5C0B0B; border-color: #801010; color: #FFAAAA; font-weight: 700;" if nm else "background-color: #1F3F28; border-color: #31683E; color: #C8E6C9; font-weight: 700;")
+            else:
+                self.btn_satellite_follow.setStyleSheet("")
+
+        self._style_weather_btn()
+
+        if hasattr(self, "tour_window") and self.tour_window:
+            self.tour_window.set_night_mode(nm)
+
+    def _on_audio_toggled(self, checked: bool) -> None:
+        self.audio_enabled = checked
+        self.config["audio_cues_enabled"] = checked
+        if hasattr(self.config, "save"):
+            self.config.save()
+
     def _emergency_stop(self) -> None:
+        play_audio_cue("stop", self.audio_enabled)
         if self.core:
             self.core.emergency_stop()
         if hasattr(self, "btn_track"):
             self.btn_track.setText("Tracking: OFF")
 
     def _set_tracking_rate(self, rate_name: str) -> None:
-        if self.core:
+        if self.core and hasattr(self.core, "set_tracking_rate"):
             self.core.set_tracking_rate(rate_name)
         for name, btn in getattr(self, "rate_buttons", {}).items():
             is_active = (name.lower() == rate_name.lower())
             btn.setChecked(is_active)
             if is_active:
-                btn.setStyleSheet("font-size: 10px; padding: 3px 6px; background-color: #1E4472; color: #FFFFFF; font-weight: 700; border: 1px solid #336FA5;")
+                if self.night_mode:
+                    btn.setStyleSheet("font-size: 10px; padding: 3px 6px; background-color: #5C0B0B; color: #FFAAAA; font-weight: 700; border: 1px solid #801010;")
+                else:
+                    btn.setStyleSheet("font-size: 10px; padding: 3px 6px; background-color: #1E4472; color: #FFFFFF; font-weight: 700; border: 1px solid #336FA5;")
             else:
-                btn.setStyleSheet("font-size: 10px; padding: 3px 6px;")
+                if self.night_mode:
+                    btn.setStyleSheet("font-size: 10px; padding: 3px 6px; background-color: #1A0303; color: #FF4D4D; border: 1px solid #4D0A0A;")
+                else:
+                    btn.setStyleSheet("font-size: 10px; padding: 3px 6px;")
 
     def _unwind_cable(self) -> None:
         if self.core:
@@ -2351,7 +4135,10 @@ class AstroTelescopeWindow(QMainWindow):
         else:
             self.follower.start()
             self.btn_satellite_follow.setText("Satellite Follow: ACTIVE")
-            self.btn_satellite_follow.setStyleSheet("background-color: #1F3F28; border-color: #31683E; color: #C8E6C9; font-weight: 700;")
+            if self.night_mode:
+                self.btn_satellite_follow.setStyleSheet("background-color: #5C0B0B; border-color: #801010; color: #FFAAAA; font-weight: 700;")
+            else:
+                self.btn_satellite_follow.setStyleSheet("background-color: #1F3F28; border-color: #31683E; color: #C8E6C9; font-weight: 700;")
             self.log_message("INFO", "Stellarium Live Satellite Follow enabled (polling port 8090 for moving satellites & objects).")
 
     def _prompt_solar_warning(self, sun_sep: float) -> bool:
@@ -2587,7 +4374,7 @@ class AstroTelescopeWindow(QMainWindow):
             self.core.zero_position()
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self.config, self)
+        dialog = SettingsDialog(self.config, night_mode=self.night_mode, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             if self.core:
                 self.core.config = self.config
@@ -2598,12 +4385,23 @@ class AstroTelescopeWindow(QMainWindow):
                 self.log_message("INFO", "Configuration updated and applied.")
 
     def _open_help(self) -> None:
-        dialog = HelpGuideDialog(self)
+        dialog = HelpGuideDialog(night_mode=self.night_mode, parent=self)
         dialog.exec()
 
     def _open_goto_dialog(self) -> None:
-        dialog = GoToDialog(self.core, self.config, self)
-        dialog.exec()
+        self._open_sky_tour()
+
+    def _open_sky_tour(self) -> None:
+        if self.tour_window is None:
+            self.tour_window = TonightSkyTourDialog(self.core, self.config, night_mode=self.night_mode, parent=self, weather_service=getattr(self, 'weather_service', None))
+        elif hasattr(self, 'weather_service') and self.weather_service and self.weather_service.latest_data:
+            self.tour_window.update_weather_display(self.weather_service.latest_data)
+        if self.tour_window.isMinimized():
+            self.tour_window.showNormal()
+        else:
+            self.tour_window.show()
+        self.tour_window.raise_()
+        self.tour_window.activateWindow()
 
     def _on_stream_rate_changed(self, index: int) -> None:
         if index == 0:  # Fast Live (25 Hz)
@@ -2673,6 +4471,10 @@ class AstroTelescopeWindow(QMainWindow):
             try:
                 ev_type, msg = self.core.event_queue.get_nowait()
                 self.log_message(ev_type, msg)
+                if ev_type in ("WARNING", "ERROR"):
+                    play_audio_cue("warning", self.audio_enabled)
+                elif ev_type == "SYNC" or "SYNC successful" in msg:
+                    play_audio_cue("sync", self.audio_enabled)
             except Exception:
                 break
 
@@ -2689,14 +4491,14 @@ class AstroTelescopeWindow(QMainWindow):
             is_sim = type(self.core.link).__name__ == "SimLink" or getattr(self.core.link, "is_simulated", False)
             if is_sim:
                 self.lbl_serial_status.setText("ARDUINO: SIMULATED (VIRTUAL)")
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #5B9DD9; background: #172433; padding: 4px 8px; border: 1px solid #2B4B6E; border-radius: 3px;")
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background: #240505; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #5B9DD9; background: #172433; padding: 4px 8px; border: 1px solid #2B4B6E; border-radius: 3px;")
             else:
                 port_name = getattr(self.core.link, "port", "CONNECTED")
                 self.lbl_serial_status.setText(f"ARDUINO: CONNECTED ({port_name})")
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #43A047; background: #1B2B1E; padding: 4px 8px; border: 1px solid #2E5C32; border-radius: 3px;")
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF6666; background: #2B0808; padding: 4px 8px; border: 1px solid #5C0B0B; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047; background: #1B2B1E; padding: 4px 8px; border: 1px solid #2E5C32; border-radius: 3px;")
         else:
             self.lbl_serial_status.setText("ARDUINO: DISCONNECTED")
-            self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #CC4444; background: #261B1B; padding: 4px 8px; border: 1px solid #4D2626; border-radius: 3px;")
+            self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF3333; background: #1A0000; padding: 4px 8px; border: 1px solid #4D0505; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #CC4444; background: #261B1B; padding: 4px 8px; border: 1px solid #4D2626; border-radius: 3px;")
             if self.btn_connect.text() != "Connect":
                 self.btn_connect.setText("Connect")
                 self.btn_connect.setProperty("class", "primary")
@@ -2705,25 +4507,28 @@ class AstroTelescopeWindow(QMainWindow):
 
         if self.stellarium and self.stellarium.is_client_connected:
             self.lbl_stellarium_status.setText("STELLARIUM: CONNECTED [Active]")
-            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #43A047; background: #1B2B1E; padding: 4px 8px; border: 1px solid #2E5C32; border-radius: 3px;")
+            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF6666; background: #2B0808; padding: 4px 8px; border: 1px solid #5C0B0B; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047; background: #1B2B1E; padding: 4px 8px; border: 1px solid #2E5C32; border-radius: 3px;")
         else:
             port_num = self.config.get("stellarium_port", 10001)
             self.lbl_stellarium_status.setText(f"STELLARIUM: LISTENING [{port_num}]")
-            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #D69E35; background: #262118; padding: 4px 8px; border: 1px solid #4D3D1F; border-radius: 3px;")
+            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF9944; background: #240D05; padding: 4px 8px; border: 1px solid #4D1A0A; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #D69E35; background: #262118; padding: 4px 8px; border: 1px solid #4D3D1F; border-radius: 3px;")
 
         # Tracking state with selected rate
         cur_rate = getattr(self.core, "tracking_rate", "Sidereal").upper()
         if self.core.tracking_enabled:
             self.btn_track.setText(f"Tracking: ON ({cur_rate})")
-            self.btn_track.setStyleSheet("background-color: #1F3F28; border-color: #31683E; color: #C8E6C9; font-weight: 700;")
+            self.btn_track.setStyleSheet("background-color: #5C0B0B; border-color: #801010; color: #FFAAAA; font-weight: 700;" if self.night_mode else "background-color: #1F3F28; border-color: #31683E; color: #C8E6C9; font-weight: 700;")
         else:
             self.btn_track.setText("Tracking: OFF")
-            self.btn_track.setStyleSheet("")
+            self.btn_track.setStyleSheet("background-color: #1A0303; border-color: #4D0A0A; color: #FF4D4D;" if self.night_mode else "")
 
         # Cable-Wrap Status Monitoring
         if hasattr(self, "lbl_cable_wrap") and hasattr(self.core, "get_cable_wrap"):
             wrap_deg, wrap_turns = self.core.get_cable_wrap()
-            color = "#FF7777" if abs(wrap_turns) > 0.4 else "#88C0FF"
+            if self.night_mode:
+                color = "#FF2222" if abs(wrap_turns) > 0.4 else "#FF4D4D"
+            else:
+                color = "#FF7777" if abs(wrap_turns) > 0.4 else "#88C0FF"
             status = "STRAIN" if abs(wrap_turns) > 0.4 else "OK"
             self.lbl_cable_wrap.setText(f"Cable: {wrap_turns:+.2f} turns [{status}]")
             self.lbl_cable_wrap.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {color};")
@@ -2788,10 +4593,18 @@ class AstroTelescopeWindow(QMainWindow):
         self.val_m_parallactic.setText(f"{parallactic:+05.1f}° ({deg_to_dms(parallactic, signed=True, decimals=dms_dec)})")
         self.val_m_constellation.setText(constellation_mount)
 
-        # Motor step counters
+        # Motor step counters & slew arrival detection
         if self.core.link and self.core.link.latest_telemetry:
             t = self.core.link.latest_telemetry
-            moving_flag = " [MOVING]" if t.moving else " [LOCKED]"
+            is_moving = bool(t.moving)
+            if self._was_moving and not is_moving and self._was_slewing:
+                play_audio_cue("slew_complete", self.audio_enabled)
+                self._was_slewing = False
+            if is_moving:
+                self._was_slewing = True
+            self._was_moving = is_moving
+
+            moving_flag = " [MOVING]" if is_moving else " [LOCKED]"
             self.val_m_steps.setText(f"Az: {t.az_steps:,}  Alt: {t.alt_steps:,}  Foc: {t.foc_steps:,}{moving_flag}")
             self.lbl_foc_pos.setText(f"Position: {t.foc_steps:,} steps")
 
@@ -2857,10 +4670,10 @@ class AstroTelescopeWindow(QMainWindow):
             self.val_t_pulses.setText(
                 f"{pulse_icon} {count} pulses sent (ΔAz: {d_az:+d}, ΔAlt: {d_alt:+d} steps) | Last nudge: {sec_ago:.1f}s ago"
             )
-            self.val_t_pulses.setStyleSheet("font-size: 11px; font-weight: 600; color: #8CD68C;")
+            self.val_t_pulses.setStyleSheet("font-size: 11px; font-weight: 600; color: #FF4D4D;" if self.night_mode else "font-size: 11px; font-weight: 600; color: #8CD68C;")
         else:
             self.val_t_pulses.setText("Tracking Inactive (0 pulses)")
-            self.val_t_pulses.setStyleSheet("font-size: 11px; font-weight: 500; color: #ABB2BF;")
+            self.val_t_pulses.setStyleSheet("font-size: 11px; font-weight: 500; color: #661515;" if self.night_mode else "font-size: 11px; font-weight: 500; color: #ABB2BF;")
 
         # Stellarium Live Follow status
         if hasattr(self, 'follower') and self.follower and self.follower.is_active:
@@ -2868,16 +4681,16 @@ class AstroTelescopeWindow(QMainWindow):
                 t_name = self.follower.target_name or "Active Selection"
                 t_type = self.follower.target_type.upper() or "TARGET"
                 self.val_t_follow_status.setText(f"ACTIVE: Following {t_name} [{t_type}] @ 2 Hz")
-                self.val_t_follow_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #43A047;")
+                self.val_t_follow_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF4D4D;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047;")
                 if "SATELLITE" in t_type or "SPACECRAFT" in t_type:
                     self.val_t_status.setText(f"TRACKING SATELLITE: {t_name}")
                     self.val_t_tracking.setText("Continuous LEO Satellite Vector (2 Hz)")
             else:
                 self.val_t_follow_status.setText("Awaiting Stellarium API (Port 8090 - In Stellarium: F2 -> Plugins -> Remote Control)")
-                self.val_t_follow_status.setStyleSheet("font-size: 11px; font-weight: 600; color: #D69E35;")
+                self.val_t_follow_status.setStyleSheet("font-size: 11px; font-weight: 600; color: #FF8844;" if self.night_mode else "font-size: 11px; font-weight: 600; color: #D69E35;")
         else:
             self.val_t_follow_status.setText("Standby")
-            self.val_t_follow_status.setStyleSheet("font-size: 11px; font-weight: 500; color: #ABB2BF;")
+            self.val_t_follow_status.setStyleSheet("font-size: 11px; font-weight: 500; color: #661515;" if self.night_mode else "font-size: 11px; font-weight: 500; color: #ABB2BF;")
 
         # 7. Sun Position & Keep-Out
         sun_alt_radar = None
@@ -2895,13 +4708,13 @@ class AstroTelescopeWindow(QMainWindow):
                 if sep < keepout:
                     if has_filter:
                         self.lbl_sun_sep.setText(f"Sun Angular Separation: {sep:.1f}° [SOLAR FILTER ACTIVE]")
-                        self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 800; color: #FFE082; background: #3E3218; padding: 2px 6px; border-radius: 2px;")
+                        self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 800; color: #FF8888; background: #330505; padding: 2px 6px; border-radius: 2px;" if self.night_mode else "font-size: 10px; font-weight: 800; color: #FFE082; background: #3E3218; padding: 2px 6px; border-radius: 2px;")
                     else:
                         self.lbl_sun_sep.setText(f"Sun Angular Separation: {sep:.1f}° [DANGER < {keepout:.0f}°]")
-                        self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 800; color: #FF6666; background: #4D1818; padding: 2px 6px; border-radius: 2px;")
+                        self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 800; color: #FF2222; background: #300000; padding: 2px 6px; border-radius: 2px;" if self.night_mode else "font-size: 10px; font-weight: 800; color: #FF6666; background: #4D1818; padding: 2px 6px; border-radius: 2px;")
                 else:
                     self.lbl_sun_sep.setText(f"Sun Angular Separation: {sep:.1f}° [Safe > {keepout:.0f}°]")
-                    self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 700; color: #8CD68C;")
+                    self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF4D4D;" if self.night_mode else "font-size: 10px; font-weight: 700; color: #8CD68C;")
 
                 if self.core.current_target_radec:
                     t_sep = separation_deg(ra_tgt_date, dec_tgt_date, s_ra, s_dec)
@@ -2915,14 +4728,24 @@ class AstroTelescopeWindow(QMainWindow):
         self.radar_widget.set_sun_altaz(sun_alt_radar, sun_az_radar, float(self.config.get("sun_keepout_deg", 15.0)))
 
     def log_message(self, level: str, message: str) -> None:
-        color_map = {
-            "INFO": "#5B9DD9",
-            "GOTO": "#43A047",
-            "SYNC": "#8E72B2",
-            "WARNING": "#D69E35",
-            "ERROR": "#CC4444",
-            "HARDWARE": "#7A8492"
-        }
+        if self.night_mode:
+            color_map = {
+                "INFO": "#FF4D4D",
+                "GOTO": "#FF6666",
+                "SYNC": "#CC2929",
+                "WARNING": "#FF8844",
+                "ERROR": "#FF2222",
+                "HARDWARE": "#771111"
+            }
+        else:
+            color_map = {
+                "INFO": "#5B9DD9",
+                "GOTO": "#43A047",
+                "SYNC": "#8E72B2",
+                "WARNING": "#D69E35",
+                "ERROR": "#CC4444",
+                "HARDWARE": "#7A8492"
+            }
         color = color_map.get(level.upper(), "#ABB2BF")
         now_str = dt.datetime.now().strftime("%H:%M:%S")
 
@@ -2937,6 +4760,8 @@ class AstroTelescopeWindow(QMainWindow):
             self.console_text.setTextCursor(cursor)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if hasattr(self, "tour_window") and self.tour_window and self.tour_window.isVisible():
+            self.tour_window.close()
         if hasattr(self, 'follower') and self.follower:
             self.follower.stop()
         if self.core:

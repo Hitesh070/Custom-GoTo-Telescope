@@ -133,6 +133,100 @@ def sun_radec(t):                                # low-precision Sun position, a
     return (math.atan2(math.cos(eps) * math.sin(lam), math.cos(lam)) / D2R) % 360.0, \
            math.asin(max(-1.0, min(1.0, math.sin(eps) * math.sin(lam)))) / D2R
 
+def moon_radec(t):                               # low-precision Moon position, about 0.3 deg
+    """Calculates apparent geocentric RA and Dec (degrees) for the Moon using Meeus truncated series."""
+    jd = julian_date(t)
+    d = jd - 2451545.0
+    L_p = (218.316 + 13.176396 * d) % 360.0
+    M = ((134.963 + 13.064993 * d) % 360.0) * D2R
+    F = ((93.272 + 13.229350 * d) % 360.0) * D2R
+    D = ((297.850 + 12.190749 * d) % 360.0) * D2R
+    M_s = ((357.528 + 0.985600 * d) % 360.0) * D2R
+
+    l = (L_p + 6.289 * math.sin(M) - 1.274 * math.sin(M - 2 * D) + 0.658 * math.sin(2 * D)
+         - 0.214 * math.sin(2 * M) - 0.186 * math.sin(M_s) - 0.114 * math.sin(2 * F))
+    b = 5.128 * math.sin(F) + 0.281 * math.sin(M + F) + 0.278 * math.sin(M - F)
+
+    l_rad = l * D2R
+    b_rad = b * D2R
+    eps = (23.439 - 0.0000004 * d) * D2R
+
+    x = math.cos(b_rad) * math.cos(l_rad)
+    y = math.cos(eps) * math.cos(b_rad) * math.sin(l_rad) - math.sin(eps) * math.sin(b_rad)
+    z = math.sin(eps) * math.cos(b_rad) * math.sin(l_rad) + math.cos(eps) * math.sin(b_rad)
+
+    ra = (math.atan2(y, x) / D2R) % 360.0
+    dec = math.asin(max(-1.0, min(1.0, z))) / D2R
+    return ra, dec
+
+# JPL approximate Keplerian elements (1800-2050)
+_PLANET_KEPLER: Dict[str, Tuple[Tuple[float, ...], Tuple[float, ...]]] = {
+    'Venus': (
+        (0.72333199, 0.00677323, 3.39471, 181.97973, 131.57294, 76.68069),
+        (0.00000092, -0.00004938, -0.0007889, 58517.81538729, 0.00268329, -0.27769418)
+    ),
+    'Mars': (
+        (1.52366231, 0.09341233, 1.85061, 355.45332, 336.04084, 49.57854),
+        (-0.00007221, 0.00011902, -0.0254781, 19140.30268499, 0.44441088, -0.29440131)
+    ),
+    'Jupiter': (
+        (5.20336301, 0.04839266, 1.30530, 34.40438, 14.75385, 100.55615),
+        (0.00060737, -0.00012880, -0.0041517, 3034.74612775, 0.21252668, 0.20469106)
+    ),
+    'Saturn': (
+        (9.53707032, 0.05415060, 2.48446, 49.94424, 92.43194, 113.71504),
+        (-0.00301530, -0.00036762, 0.0019360, 1222.49362201, -0.41897216, -0.28867794)
+    ),
+    'Earth': (
+        (1.00000261, 0.01671123, 0.00005, 100.46457, 102.93768, 0.0),
+        (0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0.0)
+    )
+}
+
+def _planet_helio_xyz(name: str, T: float) -> Tuple[float, float, float]:
+    (a0, e0, i0, l0, w0, om0), (da, de, di, dl, dw, dom) = _PLANET_KEPLER[name]
+    a = a0 + da * T
+    e = e0 + de * T
+    I = (i0 + di * T) * D2R
+    L = (l0 + dl * T) % 360.0
+    w_peri = (w0 + dw * T) % 360.0
+    omega_node = (om0 + dom * T) * D2R
+    M = ((L - w_peri) % 360.0) * D2R
+    w = ((w_peri - (om0 + dom * T)) % 360.0) * D2R
+
+    E = M
+    for _ in range(7):
+        E = E - (E - e * math.sin(E) - M) / (1.0 - e * math.cos(E))
+
+    x_prime = a * (math.cos(E) - e)
+    y_prime = a * math.sqrt(max(0.0, 1.0 - e * e)) * math.sin(E)
+
+    xecl = (math.cos(w) * math.cos(omega_node) - math.sin(w) * math.sin(omega_node) * math.cos(I)) * x_prime + \
+           (-math.sin(w) * math.cos(omega_node) - math.cos(w) * math.sin(omega_node) * math.cos(I)) * y_prime
+    yecl = (math.cos(w) * math.sin(omega_node) + math.sin(w) * math.cos(omega_node) * math.cos(I)) * x_prime + \
+           (-math.sin(w) * math.sin(omega_node) + math.cos(w) * math.cos(omega_node) * math.cos(I)) * y_prime
+    zecl = (math.sin(w) * math.sin(I)) * x_prime + (math.cos(w) * math.sin(I)) * y_prime
+    return xecl, yecl, zecl
+
+def planet_radec(name: str, t: dt.datetime) -> Tuple[float, float]:
+    """Calculates geocentric apparent RA and Dec (degrees) for major bright planets (Venus, Mars, Jupiter, Saturn)."""
+    norm_name = name.strip().capitalize()
+    if norm_name not in _PLANET_KEPLER:
+        raise ValueError(f"Unsupported planet: {name}. Supported: Venus, Mars, Jupiter, Saturn")
+    jd = julian_date(t)
+    T = (jd - 2451545.0) / 36525.0
+    xp, yp, zp = _planet_helio_xyz(norm_name, T)
+    xe, ye, ze = _planet_helio_xyz('Earth', T)
+    xg, yg, zg = xp - xe, yp - ye, zp - ze
+    eps = (23.43929 - 0.0130042 * T) * D2R
+    xeq = xg
+    yeq = yg * math.cos(eps) - zg * math.sin(eps)
+    zeq = yg * math.sin(eps) + zg * math.cos(eps)
+    ra = (math.atan2(yeq, xeq) / D2R) % 360.0
+    dist = math.sqrt(xeq * xeq + yeq * yeq + zeq * zeq)
+    dec = math.asin(max(-1.0, min(1.0, zeq / dist))) / D2R
+    return ra, dec
+
 def separation_deg(ra1, dec1, ra2, dec2):
     c = (math.sin(dec1 * D2R) * math.sin(dec2 * D2R) +
          math.cos(dec1 * D2R) * math.cos(dec2 * D2R) * math.cos((ra1 - ra2) * D2R))
@@ -199,6 +293,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "park_alt_deg": 0,
     "az_home_switch": False,
     "log_csv": True,
+    "audio_cues_enabled": True,
+    "night_mode": False,
 }
 
 class Config:
@@ -2576,7 +2672,7 @@ class TelescopeApp:
 def run_self_test() -> int:
     """Executes the complete headless 13-test verification suite (Section 9)."""
     passed = 0
-    total = 16
+    total = 17
 
     def record_pass(name: str) -> None:
         nonlocal passed
@@ -3103,6 +3199,26 @@ def run_self_test() -> int:
                         f"wrap_calc_ok={wrap_calc_ok}, unwind_ok={unwind_ok}")
     except Exception as e:
         record_fail("test_16_cable_wrap_and_unwind", str(e))
+
+    # --------------------------------------------------------------------------
+    # Test 17: Lunar & Planetary Ephemeris Calculations
+    # --------------------------------------------------------------------------
+    try:
+        t_ref = dt.datetime(2026, 11, 3, 20, 0, 0)
+        m_ra, m_dec = moon_radec(t_ref)
+        moon_ok = (0.0 <= m_ra < 360.0) and (-90.0 <= m_dec <= 90.0)
+        planets_ok = True
+        for p in ("Venus", "Mars", "Jupiter", "Saturn"):
+            p_ra, p_dec = planet_radec(p, t_ref)
+            if not (0.0 <= p_ra < 360.0 and -90.0 <= p_dec <= 90.0):
+                planets_ok = False
+                break
+        if moon_ok and planets_ok:
+            record_pass("test_17_lunar_and_planetary_ephemeris")
+        else:
+            record_fail("test_17_lunar_and_planetary_ephemeris", f"moon_ok={moon_ok}, planets_ok={planets_ok}")
+    except Exception as e:
+        record_fail("test_17_lunar_and_planetary_ephemeris", str(e))
 
     print(f"\nSelf-test complete: {passed}/{total} tests passed.")
     return 0 if (passed == total) else 1
