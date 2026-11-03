@@ -1610,10 +1610,20 @@ class AstroTelescopeWindow(QMainWindow):
 
         self.setWindowTitle("Custom GoTo Telescope Controller")
 
-        # Load and apply black hole application icon (cropped with transparent alpha background)
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.png")
-        if os.path.exists(icon_path):
-            app_icon = QIcon(icon_path)
+        # Load and apply black hole application icon (multi-resolution .ico and high-res .png)
+        ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.ico")
+        png_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.png")
+        if not os.path.exists(ico_path) and hasattr(sys, '_MEIPASS'):
+            ico_path = os.path.join(sys._MEIPASS, "assets", "black_hole_icon.ico")
+            png_path = os.path.join(sys._MEIPASS, "assets", "black_hole_icon.png")
+
+        app_icon = QIcon()
+        if os.path.exists(ico_path):
+            app_icon.addFile(ico_path)
+        if os.path.exists(png_path):
+            app_icon.addFile(png_path)
+
+        if not app_icon.isNull():
             self.setWindowIcon(app_icon)
             QApplication.setWindowIcon(app_icon)
         self.resize(1280, 880)
@@ -2868,6 +2878,13 @@ class AstroTelescopeWindow(QMainWindow):
 # ==============================================================================
 
 def launch_app(simulate: bool = False, config_path: str = "telescope_config.json") -> None:
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("astro.goto.telescope.controller.v2")
+        except Exception:
+            pass
+
     app = QApplication.instance()
     if not app:
         app = QApplication(sys.argv)
