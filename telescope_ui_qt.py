@@ -857,32 +857,9 @@ class LiveWeatherService(QObject):
         finally:
             self._is_fetching = False
 
-def play_audio_cue(cue_name: str, enabled: bool = True) -> None:
-    """Dispatches asynchronous audio feedback via standard library winsound (non-blocking)."""
-    if not enabled:
-        return
-    def _run():
-        try:
-            import winsound
-            if cue_name == "slew_complete":
-                # Pleasing ascending arrival chime: 587 Hz (D5) -> 880 Hz (A5)
-                winsound.Beep(587, 80)
-                time.sleep(0.03)
-                winsound.Beep(880, 110)
-            elif cue_name == "sync":
-                # Calibration confirmation tone: 784 Hz (G5)
-                winsound.Beep(784, 120)
-            elif cue_name == "warning":
-                # Cautionary low tone: 294 Hz (D4)
-                winsound.Beep(294, 180)
-            elif cue_name == "stop":
-                # Urgent double low buzz: 220 Hz (A3)
-                winsound.Beep(220, 90)
-                time.sleep(0.04)
-                winsound.Beep(220, 110)
-        except Exception:
-            pass
-    threading.Thread(target=_run, daemon=True).start()
+def play_audio_cue(cue_name: str, enabled: bool = False) -> None:
+    """Audio cues completely disabled."""
+    pass
 
 
 # ==============================================================================
@@ -2343,10 +2320,15 @@ class TonightSkyTourDialog(QDialog):
 
         self._refresh_all_targets(force_recalc=True)
 
-        # 1-second real-time position tracking timer
+        # 1-second target recalculation timer
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._on_timer_tick)
         self.timer.start(1000)
+
+        # Fast 50ms (20 Hz) real-time mount coordinate tracking timer
+        self.mount_pos_timer = QTimer(self)
+        self.mount_pos_timer.timeout.connect(self._update_mount_pos_fast)
+        self.mount_pos_timer.start(50)
 
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -2365,40 +2347,48 @@ class TonightSkyTourDialog(QDialog):
         lbl_title.setProperty("class", "title")
         v_head.addWidget(lbl_title)
 
-        lbl_sub = QLabel("Live Astronomical Visibility (>15° Horizon) | Refractor 60mm F/2.8 | Eyepiece Recommendations (20x, 30x, 40x)")
+        lbl_sub = QLabel("Live Astronomical Visibility | Refractor 60mm F/2.8 | Eyepiece Recommendations (20x, 30x, 40x)")
         lbl_sub.setProperty("class", "subtitle")
         v_head.addWidget(lbl_sub)
         header_lay.addLayout(v_head)
         header_lay.addStretch()
 
         self.lbl_mount_summary = QLabel("Mount: Az 0.0°, Alt 0.0°")
-        self.lbl_mount_summary.setStyleSheet("font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #5AA9FF;" if not self.night_mode else "font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #FF4D4D;")
+        self.lbl_mount_summary.setStyleSheet(
+            "font-family: 'Consolas', monospace; font-size: 15px; font-weight: 800; color: #5AA9FF; padding: 2px 8px; border-radius: 4px;"
+            if not self.night_mode else
+            "font-family: 'Consolas', monospace; font-size: 15px; font-weight: 800; color: #FF4D4D; padding: 2px 8px; border-radius: 4px;"
+        )
         header_lay.addWidget(self.lbl_mount_summary)
         main_layout.addWidget(header_card)
 
-        # Live Meteorological Transparency & Cloud Cover Deck
+        # Live Meteorological Transparency & Meteorological Deck
         self.weather_card = QFrame()
         self.weather_card.setProperty("class", "card")
         w_lay = QHBoxLayout(self.weather_card)
         w_lay.setContentsMargins(12, 6, 12, 6)
-        w_lay.setSpacing(10)
+        w_lay.setSpacing(14)
 
-        self.lbl_weather_badge = QLabel("[CHECKING WEATHER...]")
+        self.lbl_weather_badge = QLabel("[WEATHER: CHECKING...]")
         self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFAAAA;" if self.night_mode else "font-size: 11px; font-weight: 800; color: #5AA9FF;")
         w_lay.addWidget(self.lbl_weather_badge)
 
-        self.lbl_weather_desc = QLabel("Querying live Open-Meteo astronomical cloud cover telemetry...")
-        self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #FF4D4D;" if self.night_mode else "font-size: 11px; color: #C8D1DC;")
-        w_lay.addWidget(self.lbl_weather_desc)
+        self.lbl_weather_condition = QLabel("Sky: --")
+        self.lbl_weather_condition.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF6666;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #DCE2EB;")
+        w_lay.addWidget(self.lbl_weather_condition)
+
+        self.lbl_weather_seeing = QLabel("Seeing: --")
+        self.lbl_weather_seeing.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF8888;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #FFE082;")
+        w_lay.addWidget(self.lbl_weather_seeing)
+
+        self.lbl_weather_metrics = QLabel("Temp: --.-°C  |  Humidity: --%  |  Wind: --.- km/h  |  Visibility: --.- km")
+        self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas', monospace; font-size: 11px; color: #FF8888;" if self.night_mode else "font-family: 'Consolas', monospace; font-size: 11px; color: #C8D1DC;")
+        w_lay.addWidget(self.lbl_weather_metrics)
 
         w_lay.addStretch()
 
-        self.lbl_weather_metrics = QLabel("Temp: --.-°C | Humidity: --% | Wind: --.- km/h")
-        self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #AA2222;" if self.night_mode else "font-family: 'Consolas'; font-size: 11px; color: #8892A0;")
-        w_lay.addWidget(self.lbl_weather_metrics)
-
-        self.btn_refresh_weather = QPushButton("Refresh Weather")
-        self.btn_refresh_weather.setToolTip("Query live Open-Meteo cloud cover and astronomical seeing telemetry")
+        self.btn_refresh_weather = QPushButton("Refresh")
+        self.btn_refresh_weather.setToolTip("Query live Open-Meteo cloud cover and meteorological conditions")
         self.btn_refresh_weather.clicked.connect(self._refresh_weather_clicked)
         w_lay.addWidget(self.btn_refresh_weather)
 
@@ -2418,7 +2408,7 @@ class TonightSkyTourDialog(QDialog):
         self.btn_grp = QButtonGroup(self)
         self.tab_buttons: Dict[str, QPushButton] = {}
         tabs = [
-            ("Visible", "Tonight's Visible (Alt > 15°)"),
+            ("Visible", "Tonight's Visible"),
             ("Solar System", "Planets & Moon"),
             ("Deep Sky", "Deep Sky (Messier)"),
             ("Double Star", "Double Stars & Giants"),
@@ -2851,7 +2841,11 @@ class TonightSkyTourDialog(QDialog):
         self.night_mode = enabled
         self.setStyleSheet(NIGHT_VISION_STYLE if enabled else SCIENTIFIC_STYLE)
         if hasattr(self, "lbl_mount_summary"):
-            self.lbl_mount_summary.setStyleSheet("font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #FF4D4D;" if enabled else "font-family: 'Consolas'; font-size: 11px; font-weight: 700; color: #5AA9FF;")
+            self.lbl_mount_summary.setStyleSheet(
+                "font-family: 'Consolas', monospace; font-size: 15px; font-weight: 800; color: #FF4D4D; padding: 2px 8px; border-radius: 4px;"
+                if enabled else
+                "font-family: 'Consolas', monospace; font-size: 15px; font-weight: 800; color: #5AA9FF; padding: 2px 8px; border-radius: 4px;"
+            )
         if hasattr(self, "lbl_target_name"):
             self.lbl_target_name.setStyleSheet("font-size: 15px; font-weight: 800; color: #FF6666;" if enabled else "font-size: 15px; font-weight: 800; color: #FFFFFF;")
         if hasattr(self, "lbl_target_meta"):
@@ -2877,15 +2871,26 @@ class TonightSkyTourDialog(QDialog):
         self._style_weather_card()
         self._refresh_all_targets(force_recalc=True)
 
+    def _update_mount_pos_fast(self) -> None:
+        """Fast 50ms real-time mount Az/Alt coordinate update."""
+        if self.core and hasattr(self.core, "get_telescope_altaz"):
+            m_alt, m_az = self.core.get_telescope_altaz()
+            if hasattr(self, "lbl_mount_summary"):
+                self.lbl_mount_summary.setText(f"Mount: Az {m_az:.1f}°, Alt {m_alt:.1f}°")
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if hasattr(self, "timer") and self.timer.isActive():
             self.timer.stop()
+        if hasattr(self, "mount_pos_timer") and self.mount_pos_timer.isActive():
+            self.mount_pos_timer.stop()
         event.accept()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
         if hasattr(self, "timer") and not self.timer.isActive():
             self.timer.start(1000)
+        if hasattr(self, "mount_pos_timer") and not self.mount_pos_timer.isActive():
+            self.mount_pos_timer.start(50)
 
     def _refresh_weather_clicked(self) -> None:
         if self.weather_service:
@@ -2894,7 +2899,6 @@ class TonightSkyTourDialog(QDialog):
             self.main_window.weather_service.fetch_async()
         if hasattr(self, "lbl_weather_badge"):
             self.lbl_weather_badge.setText("[CHECKING...]")
-            self.lbl_weather_desc.setText("Fetching updated cloud cover and transparency data...")
 
     def update_weather_display(self, data: Dict[str, Any]) -> None:
         self.weather_data = data
@@ -2902,23 +2906,19 @@ class TonightSkyTourDialog(QDialog):
         temp = data.get("temperature_c", 0.0)
         hum = data.get("humidity_pct", 0)
         wind = data.get("wind_kmh", 0.0)
+        vis_km = data.get("visibility_km", 10.0)
+        condition = data.get("condition", "Clear Sky" if cloud < 20 else ("Overcast" if cloud >= 80 else "Cloudy"))
         badge = data.get("badge", "[WEATHER]")
-        obs = data.get("obs_status", "")
+        transparency = data.get("transparency", "Normal")
 
         if hasattr(self, "lbl_weather_badge"):
-            self.lbl_weather_badge.setText(f"{badge} {cloud}% CLOUDS")
-        if hasattr(self, "lbl_weather_desc"):
-            if cloud >= 80:
-                desc_text = f"Local cloud deck obscuring line of sight ({obs}) — Direct optical observation obstructed"
-            elif cloud >= 50:
-                desc_text = f"Broken clouds ({obs}) — Intermittent observing windows between cloud gaps"
-            elif cloud >= 25:
-                desc_text = f"Scattered clouds ({obs}) — Good visibility with occasional drifting cloud layers"
-            else:
-                desc_text = f"Clear sky ({obs}) — Pristine optical transparency for planetary & deep-sky observation"
-            self.lbl_weather_desc.setText(desc_text)
+            self.lbl_weather_badge.setText(f"{badge} {cloud}% CLOUD")
+        if hasattr(self, "lbl_weather_condition"):
+            self.lbl_weather_condition.setText(f"Sky: {condition}")
+        if hasattr(self, "lbl_weather_seeing"):
+            self.lbl_weather_seeing.setText(f"Seeing: {transparency}")
         if hasattr(self, "lbl_weather_metrics"):
-            self.lbl_weather_metrics.setText(f"Temp: {temp:.1f}°C | Humidity: {hum}% | Wind: {wind:.1f} km/h")
+            self.lbl_weather_metrics.setText(f"Temp: {temp:.1f}°C  |  Humidity: {hum}%  |  Wind: {wind:.1f} km/h  |  Visibility: {vis_km:.1f} km")
 
         self._style_weather_card()
         self._refresh_table_view()
@@ -2926,23 +2926,26 @@ class TonightSkyTourDialog(QDialog):
     def _style_weather_card(self) -> None:
         if not hasattr(self, "weather_card"):
             return
-        cloud = self.weather_data.get("cloud_cover", 0) if self.weather_data else 0
         if self.night_mode:
             self.weather_card.setStyleSheet("background-color: #240505; border: 1px solid #5C0B0B; border-radius: 4px; padding: 4px;")
-            self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFAAAA;")
-            self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #FF4D4D;")
-            self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #FF6666;")
+            if hasattr(self, "lbl_weather_badge"):
+                self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFAAAA;")
+            if hasattr(self, "lbl_weather_condition"):
+                self.lbl_weather_condition.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF6666;")
+            if hasattr(self, "lbl_weather_seeing"):
+                self.lbl_weather_seeing.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF8888;")
+            if hasattr(self, "lbl_weather_metrics"):
+                self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas', monospace; font-size: 11px; color: #FF8888;")
         else:
-            if cloud >= 80:
-                self.weather_card.setStyleSheet("background-color: #2A1F12; border: 1px solid #6E4F28; border-radius: 4px; padding: 4px;")
-                self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFE082;")
-                self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #FFD4A8;")
-                self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #D69E35;")
-            else:
-                self.weather_card.setStyleSheet("background-color: #121E19; border: 1px solid #234D3A; border-radius: 4px; padding: 4px;")
-                self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #8CD68C;")
-                self.lbl_weather_desc.setStyleSheet("font-size: 11px; color: #C8E6C9;")
-                self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #8892A0;")
+            self.weather_card.setStyleSheet("background-color: #172433; border: 1px solid #2B4B6E; border-radius: 4px; padding: 4px;")
+            if hasattr(self, "lbl_weather_badge"):
+                self.lbl_weather_badge.setStyleSheet("font-size: 11px; font-weight: 800; color: #5AA9FF;")
+            if hasattr(self, "lbl_weather_condition"):
+                self.lbl_weather_condition.setStyleSheet("font-size: 11px; font-weight: 700; color: #DCE2EB;")
+            if hasattr(self, "lbl_weather_seeing"):
+                self.lbl_weather_seeing.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFE082;")
+            if hasattr(self, "lbl_weather_metrics"):
+                self.lbl_weather_metrics.setStyleSheet("font-family: 'Consolas', monospace; font-size: 11px; color: #C8D1DC;")
 
     def _toggle_night_from_tour(self) -> None:
         if self.main_window and hasattr(self.main_window, "toggle_night_mode"):
@@ -3247,7 +3250,7 @@ class AstroTelescopeWindow(QMainWindow):
         self.stellarium = stellarium
         self.config = config
 
-        self.setWindowTitle("Custom GoTo Telescope Controller")
+        self.setWindowTitle("Custom GoTo")
 
         # Load and apply black hole application icon (multi-resolution .ico and high-res .png)
         ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.ico")
@@ -3268,9 +3271,11 @@ class AstroTelescopeWindow(QMainWindow):
         self.resize(1280, 880)
         self.setMinimumSize(1080, 780)
 
-        # State: Night mode, audio cues, and slew arrival tracking
+        # State: Night mode, console history, and slew arrival tracking
         self.night_mode: bool = bool(self.config.get("night_mode", False))
-        self.audio_enabled: bool = bool(self.config.get("audio_cues_enabled", True))
+        self.audio_enabled: bool = False
+        self._console_history: List[Tuple[str, str, str]] = []
+        self._prev_stellarium_connected: bool = False
         self._was_slewing: bool = False
         self._was_moving: bool = False
         self.tour_window: Optional[TonightSkyTourDialog] = None
@@ -3402,18 +3407,18 @@ class AstroTelescopeWindow(QMainWindow):
         status_box.setSpacing(10)
 
         self.lbl_serial_status = QLabel("ARDUINO: DISCONNECTED")
-        self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #CC4444; background: #261B1B; padding: 4px 8px; border: 1px solid #4D2626; border-radius: 3px;")
+        self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
         status_box.addWidget(self.lbl_serial_status)
 
         self.lbl_stellarium_status = QLabel("STELLARIUM: LISTENING [10001]")
-        self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #D69E35; background: #262118; padding: 4px 8px; border: 1px solid #4D3D1F; border-radius: 3px;")
+        self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
         status_box.addWidget(self.lbl_stellarium_status)
 
         self.btn_weather = QPushButton("[WEATHER: CHECKING...]")
-        self.btn_weather.setToolTip("Query live Open-Meteo astronomical cloud cover & seeing telemetry")
+        self.btn_weather.setToolTip("Query live Open-Meteo meteorological cloud cover & seeing telemetry")
         self.btn_weather.clicked.connect(self._refresh_weather_clicked)
+        self.btn_weather.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
         status_box.addWidget(self.btn_weather)
-        self._style_weather_btn()
 
         layout.addLayout(status_box)
 
@@ -3421,9 +3426,9 @@ class AstroTelescopeWindow(QMainWindow):
         btn_settings.clicked.connect(self._open_settings)
         layout.addWidget(btn_settings)
 
-        btn_help = QPushButton("Help & Manual")
-        btn_help.clicked.connect(self._open_help)
-        layout.addWidget(btn_help)
+        self.btn_help = QPushButton("Help")
+        self.btn_help.clicked.connect(self._open_help)
+        layout.addWidget(self.btn_help)
 
         self.btn_night_mode = QPushButton("Night Vision: ON" if self.night_mode else "Night Vision")
         if self.night_mode:
@@ -3431,12 +3436,6 @@ class AstroTelescopeWindow(QMainWindow):
         self.btn_night_mode.setToolTip("Toggle pure-red night-vision mode to preserve dark adaptation (Ctrl+N)")
         self.btn_night_mode.clicked.connect(self.toggle_night_mode)
         layout.addWidget(self.btn_night_mode)
-
-        chk_audio = QCheckBox("Audio")
-        chk_audio.setChecked(bool(self.audio_enabled))
-        chk_audio.setToolTip("Acoustic feedback for slews, arrivals, and emergency stop")
-        chk_audio.toggled.connect(self._on_audio_toggled)
-        layout.addWidget(chk_audio)
 
         self.btn_estop = QPushButton("STOP")
         self.btn_estop.setProperty("class", "stop-btn")
@@ -3455,14 +3454,14 @@ class AstroTelescopeWindow(QMainWindow):
 
         self.lbl_warn = QLabel("CAUTION: NEVER POINT TELESCOPE AT OR NEAR THE SUN WITHOUT A CERTIFIED SOLAR FILTER")
         lbl_warn = self.lbl_warn
-        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #F2C2C2;" if not self.night_mode else "font-size: 10px; font-weight: 700; color: #FF3333;")
+        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #FFFFFF;" if not self.night_mode else "font-size: 10px; font-weight: 700; color: #FF3333;")
         layout.addWidget(lbl_warn)
 
         layout.addStretch()
 
         self.chk_solar_filter = QCheckBox("Solar Filter Attached")
         self.chk_solar_filter.setChecked(False)
-        self.chk_solar_filter.setStyleSheet("font-size: 10px; font-weight: 700; color: #FFE082;")
+        self.chk_solar_filter.setStyleSheet("font-size: 10px; font-weight: 700; color: #FFFFFF;" if not self.night_mode else "font-size: 10px; font-weight: 700; color: #FF4D4D;")
         self.chk_solar_filter.setToolTip("Enables solar observation when a physical certified solar filter is securely attached")
         self.chk_solar_filter.toggled.connect(self._toggle_solar_filter)
         layout.addWidget(self.chk_solar_filter)
@@ -3562,13 +3561,15 @@ class AstroTelescopeWindow(QMainWindow):
         head_row.addWidget(lbl_head1)
         head_row.addStretch()
 
-        lbl_rate = QLabel("Data Rate:")
-        lbl_rate.setStyleSheet("font-size: 11px; font-weight: 600; color: #8892A0;")
-        head_row.addWidget(lbl_rate)
+        self.lbl_data_rate_label = QLabel("Data Rate:")
+        self.lbl_data_rate_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #AA2222;" if self.night_mode else "font-size: 11px; font-weight: 600; color: #8892A0;")
+        head_row.addWidget(self.lbl_data_rate_label)
 
         self.combo_stream_rate = QComboBox()
         self.combo_stream_rate.addItems(["Fast Live (25 Hz)", "Normal (1s)"])
         self.combo_stream_rate.currentIndexChanged.connect(self._on_stream_rate_changed)
+        if self.night_mode:
+            self.combo_stream_rate.setStyleSheet("background-color: #140202; border: 1px solid #400808; color: #FF4D4D;")
         head_row.addWidget(self.combo_stream_rate)
 
         lay_mount.addLayout(head_row)
@@ -3744,9 +3745,9 @@ class AstroTelescopeWindow(QMainWindow):
         # Smarter Kinematics: Tracking Rate Selector Bar
         rate_box = QHBoxLayout()
         rate_box.setSpacing(4)
-        lbl_rate = QLabel("Rate:")
-        lbl_rate.setStyleSheet("font-size: 11px; color: #8892A0; font-weight: 600;")
-        rate_box.addWidget(lbl_rate)
+        self.lbl_tracking_rate_label = QLabel("Rate:")
+        self.lbl_tracking_rate_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #AA2222;" if self.night_mode else "font-size: 11px; font-weight: 600; color: #8892A0;")
+        rate_box.addWidget(self.lbl_tracking_rate_label)
 
         self.rate_buttons: Dict[str, QPushButton] = {}
         for r_name in ("Sidereal", "Lunar", "Solar", "King"):
@@ -3794,11 +3795,11 @@ class AstroTelescopeWindow(QMainWindow):
         btn_zero.clicked.connect(self._confirm_zero)
         act_grid.addWidget(btn_zero, 2, 1)
 
-        btn_sky_tour = QPushButton("Tonight's Best Sky Tour...")
-        btn_sky_tour.setProperty("class", "primary")
-        btn_sky_tour.setToolTip("Interactive celestial tour of visible targets with 20x/30x/40x eyepiece recommendations (Ctrl+T)")
-        btn_sky_tour.clicked.connect(self._open_sky_tour)
-        act_grid.addWidget(btn_sky_tour, 3, 0, 1, 2)
+        self.btn_sky_tour = QPushButton("Tonight's Best")
+        self.btn_sky_tour.setProperty("class", "primary")
+        self.btn_sky_tour.setToolTip("Interactive celestial tour of visible targets with 20x/30x/40x eyepiece recommendations (Ctrl+T)")
+        self.btn_sky_tour.clicked.connect(self._open_sky_tour)
+        act_grid.addWidget(self.btn_sky_tour, 3, 0, 1, 2)
 
         act_layout.addLayout(act_grid)
 
@@ -3924,13 +3925,13 @@ class AstroTelescopeWindow(QMainWindow):
         self.btn_sync_loc.clicked.connect(lambda: self._sync_location_from_stellarium(quiet=False))
         h.addWidget(self.btn_sync_loc)
 
-        self.chk_autoscroll = QCheckBox("Auto-Scroll")
-        self.chk_autoscroll.setChecked(True)
-        h.addWidget(self.chk_autoscroll)
-
         btn_clear = QPushButton("Clear Console")
         btn_clear.clicked.connect(self._clear_console)
         h.addWidget(btn_clear)
+
+        self.chk_autoscroll = QCheckBox("Auto-Scroll")
+        self.chk_autoscroll.setChecked(True)
+        h.addWidget(self.chk_autoscroll)
 
         layout.addLayout(h)
 
@@ -4011,18 +4012,7 @@ class AstroTelescopeWindow(QMainWindow):
     def _style_weather_btn(self) -> None:
         if not hasattr(self, "btn_weather"):
             return
-        data = self.weather_service.latest_data if hasattr(self, "weather_service") and self.weather_service else None
-        cloud = data.get("cloud_cover", 0) if data else 0
-        if self.night_mode:
-            if cloud >= 80:
-                self.btn_weather.setStyleSheet("background-color: #3B0808; border: 1px solid #730E0E; color: #FFAAAA; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
-            else:
-                self.btn_weather.setStyleSheet("background-color: #240505; border: 1px solid #4D0A0A; color: #FF6666; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
-        else:
-            if cloud >= 80:
-                self.btn_weather.setStyleSheet("background-color: #2A1F12; border: 1px solid #6E4F28; color: #FFE082; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
-            else:
-                self.btn_weather.setStyleSheet("background-color: #172433; border: 1px solid #2B4B6E; color: #5AA9FF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
+        self.btn_weather.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
 
     def _apply_active_theme(self) -> None:
         nm = self.night_mode
@@ -4036,9 +4026,21 @@ class AstroTelescopeWindow(QMainWindow):
         if hasattr(self, "safety_strip"):
             self.safety_strip.setStyleSheet("background-color: #240505; border-bottom: 1px solid #4D0A0A;" if nm else "background-color: #381B1B; border-bottom: 1px solid #4D2626;")
         if hasattr(self, "lbl_warn"):
-            self.lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF3333;" if nm else "font-size: 10px; font-weight: 700; color: #F2C2C2;")
+            self.lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF3333;" if nm else "font-size: 10px; font-weight: 700; color: #FFFFFF;")
         if hasattr(self, "chk_solar_filter"):
-            self.chk_solar_filter.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF5555;" if nm else "font-size: 10px; font-weight: 700; color: #FFE082;")
+            self.chk_solar_filter.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF4D4D;" if nm else "font-size: 10px; font-weight: 700; color: #FFFFFF;")
+        if hasattr(self, "lbl_data_rate_label"):
+            self.lbl_data_rate_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #AA2222;" if nm else "font-size: 11px; font-weight: 600; color: #8892A0;")
+        if hasattr(self, "combo_stream_rate"):
+            self.combo_stream_rate.setStyleSheet("background-color: #140202; border: 1px solid #400808; color: #FF4D4D;" if nm else "")
+        if hasattr(self, "lbl_tracking_rate_label"):
+            self.lbl_tracking_rate_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #AA2222;" if nm else "font-size: 11px; font-weight: 600; color: #8892A0;")
+
+        # Re-render console history with active theme colors
+        if hasattr(self, "console_text") and hasattr(self, "_console_history"):
+            self.console_text.clear()
+            for ts, lvl, msg in self._console_history:
+                self._append_console_entry(ts, lvl, msg)
 
         if hasattr(self, "lbl_radar_legend"):
             self.lbl_radar_legend.setText("Bright Red: Scope | Dotted Red: Target | Dark Crimson: Sun" if nm else "Blue: Mount Reticle  |  Amber: Target  |  Yellow: Sun")
@@ -4074,10 +4076,7 @@ class AstroTelescopeWindow(QMainWindow):
             self.tour_window.set_night_mode(nm)
 
     def _on_audio_toggled(self, checked: bool) -> None:
-        self.audio_enabled = checked
-        self.config["audio_cues_enabled"] = checked
-        if hasattr(self.config, "save"):
-            self.config.save()
+        pass
 
     def _emergency_stop(self) -> None:
         play_audio_cue("stop", self.audio_enabled)
@@ -4120,9 +4119,10 @@ class AstroTelescopeWindow(QMainWindow):
                     self.core.follower.clear_authorized_target()
                 if self.core.link and self.core.link.is_open:
                     self.core.link.send("S")
-            status = "ENABLED" if self.core.tracking_enabled else "DISABLED"
+            cur_rate = getattr(self.core, "tracking_rate", "Sidereal").upper()
+            status = f"ON ({cur_rate})" if self.core.tracking_enabled else "OFF"
             self.btn_track.setText(f"Tracking: {status}")
-            self.core.on_event("INFO", f"Sidereal Tracking {status}")
+            self.core.on_event("INFO", f"Tracking {status}")
 
     def _toggle_satellite_follow(self) -> None:
         if not self.follower:
@@ -4410,6 +4410,8 @@ class AstroTelescopeWindow(QMainWindow):
             self.timer.setInterval(1000)
 
     def _clear_console(self) -> None:
+        if hasattr(self, "_console_history"):
+            self._console_history.clear()
         self.console_text.clear()
 
     # --------------------------------------------------------------------------
@@ -4490,28 +4492,36 @@ class AstroTelescopeWindow(QMainWindow):
         if self.core.link and self.core.link.is_open:
             is_sim = type(self.core.link).__name__ == "SimLink" or getattr(self.core.link, "is_simulated", False)
             if is_sim:
-                self.lbl_serial_status.setText("ARDUINO: SIMULATED (VIRTUAL)")
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background: #240505; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #5B9DD9; background: #172433; padding: 4px 8px; border: 1px solid #2B4B6E; border-radius: 3px;")
+                self.lbl_serial_status.setText("ARDUINO: SIMULATED")
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E4472; padding: 4px 8px; border: 1px solid #2B6496; border-radius: 3px;")
             else:
-                port_name = getattr(self.core.link, "port", "CONNECTED")
-                self.lbl_serial_status.setText(f"ARDUINO: CONNECTED ({port_name})")
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF6666; background: #2B0808; padding: 4px 8px; border: 1px solid #5C0B0B; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047; background: #1B2B1E; padding: 4px 8px; border: 1px solid #2E5C32; border-radius: 3px;")
+                self.lbl_serial_status.setText("ARDUINO: CONNECTED")
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
         else:
             self.lbl_serial_status.setText("ARDUINO: DISCONNECTED")
-            self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF3333; background: #1A0000; padding: 4px 8px; border: 1px solid #4D0505; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #CC4444; background: #261B1B; padding: 4px 8px; border: 1px solid #4D2626; border-radius: 3px;")
+            self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
             if self.btn_connect.text() != "Connect":
                 self.btn_connect.setText("Connect")
                 self.btn_connect.setProperty("class", "primary")
                 self.btn_connect.style().unpolish(self.btn_connect)
                 self.btn_connect.style().polish(self.btn_connect)
 
-        if self.stellarium and self.stellarium.is_client_connected:
-            self.lbl_stellarium_status.setText("STELLARIUM: CONNECTED [Active]")
-            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF6666; background: #2B0808; padding: 4px 8px; border: 1px solid #5C0B0B; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047; background: #1B2B1E; padding: 4px 8px; border: 1px solid #2E5C32; border-radius: 3px;")
+        stel_conn = bool(self.stellarium and self.stellarium.is_client_connected)
+        if stel_conn:
+            self.lbl_stellarium_status.setText("STELLARIUM: CONNECTED")
+            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
         else:
             port_num = self.config.get("stellarium_port", 10001)
             self.lbl_stellarium_status.setText(f"STELLARIUM: LISTENING [{port_num}]")
-            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF9944; background: #240D05; padding: 4px 8px; border: 1px solid #4D1A0A; border-radius: 3px;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #D69E35; background: #262118; padding: 4px 8px; border: 1px solid #4D3D1F; border-radius: 3px;")
+            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
+
+        # Auto-sync location from Stellarium whenever connected
+        if stel_conn and not getattr(self, "_prev_stellarium_connected", False):
+            self.log_message("INFO", "Stellarium connected: synchronizing observer coordinates...")
+            self._sync_location_from_stellarium(quiet=True)
+            if hasattr(self, "weather_service") and self.weather_service:
+                self.weather_service.fetch_async()
+        self._prev_stellarium_connected = stel_conn
 
         # Tracking state with selected rate
         cur_rate = getattr(self.core, "tracking_rate", "Sidereal").upper()
@@ -4650,7 +4660,11 @@ class AstroTelescopeWindow(QMainWindow):
             self.val_t_constellation.setText(self._cached_constellation_target)
             rise, transit, setting = self._cached_rise_transit_set
             self.val_t_ephemeris.setText(f"Rise: {rise} | Transit: {transit} | Set: {setting}")
-            self.val_t_tracking.setText("Sidereal Alt-Az Microstep Differential")
+            rate_title = getattr(self.core, "tracking_rate", "Sidereal").title()
+            if self.core.tracking_enabled:
+                self.val_t_tracking.setText(f"Active ({rate_title}) - Tracking Engaged")
+            else:
+                self.val_t_tracking.setText(f"{rate_title} Alt-Az Microstep Differential")
         else:
             self.val_t_status.setText("No Active Target (Awaiting Stellarium Command)")
             self.val_t_j2000.setText("None")
@@ -4658,7 +4672,11 @@ class AstroTelescopeWindow(QMainWindow):
             self.val_t_altaz.setText("None")
             self.val_t_constellation.setText("None")
             self.val_t_ephemeris.setText("--:-- | --:-- | --:--")
-            self.val_t_tracking.setText("Standby")
+            rate_title = getattr(self.core, "tracking_rate", "Sidereal").title() if self.core else "Sidereal"
+            if self.core and self.core.tracking_enabled:
+                self.val_t_tracking.setText(f"Active ({rate_title}) - Standby for Target")
+            else:
+                self.val_t_tracking.setText(f"Standby ({rate_title})")
 
         # 6. Tracking Telemetry & Live Heartbeat Monitoring
         if self.core.tracking_enabled and self.core.current_target_radec:
@@ -4713,7 +4731,7 @@ class AstroTelescopeWindow(QMainWindow):
                         self.lbl_sun_sep.setText(f"Sun Angular Separation: {sep:.1f}° [DANGER < {keepout:.0f}°]")
                         self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 800; color: #FF2222; background: #300000; padding: 2px 6px; border-radius: 2px;" if self.night_mode else "font-size: 10px; font-weight: 800; color: #FF6666; background: #4D1818; padding: 2px 6px; border-radius: 2px;")
                 else:
-                    self.lbl_sun_sep.setText(f"Sun Angular Separation: {sep:.1f}° [Safe > {keepout:.0f}°]")
+                    self.lbl_sun_sep.setText(f"Sun Angular Separation: {sep:.1f}°")
                     self.lbl_sun_sep.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF4D4D;" if self.night_mode else "font-size: 10px; font-weight: 700; color: #8CD68C;")
 
                 if self.core.current_target_radec:
@@ -4728,6 +4746,15 @@ class AstroTelescopeWindow(QMainWindow):
         self.radar_widget.set_sun_altaz(sun_alt_radar, sun_az_radar, float(self.config.get("sun_keepout_deg", 15.0)))
 
     def log_message(self, level: str, message: str) -> None:
+        now_str = dt.datetime.now().strftime("%H:%M:%S")
+        if not hasattr(self, "_console_history"):
+            self._console_history = []
+        self._console_history.append((now_str, level.upper(), message))
+        if len(self._console_history) > 2000:
+            self._console_history = self._console_history[-1000:]
+        self._append_console_entry(now_str, level.upper(), message)
+
+    def _append_console_entry(self, now_str: str, level: str, message: str) -> None:
         if self.night_mode:
             color_map = {
                 "INFO": "#FF4D4D",
@@ -4735,8 +4762,13 @@ class AstroTelescopeWindow(QMainWindow):
                 "SYNC": "#CC2929",
                 "WARNING": "#FF8844",
                 "ERROR": "#FF2222",
-                "HARDWARE": "#771111"
+                "HARDWARE": "#AA2222",
+                "STELLARIUM_CONNECTED": "#FF6666",
+                "STELLARIUM_DISCONNECTED": "#FF4444"
             }
+            color = color_map.get(level, "#FF4D4D")
+            time_col = "#7A1010"
+            msg_col = "#FF7777"
         else:
             color_map = {
                 "INFO": "#5B9DD9",
@@ -4744,14 +4776,17 @@ class AstroTelescopeWindow(QMainWindow):
                 "SYNC": "#8E72B2",
                 "WARNING": "#D69E35",
                 "ERROR": "#CC4444",
-                "HARDWARE": "#7A8492"
+                "HARDWARE": "#7A8492",
+                "STELLARIUM_CONNECTED": "#43A047",
+                "STELLARIUM_DISCONNECTED": "#CC4444"
             }
-        color = color_map.get(level.upper(), "#ABB2BF")
-        now_str = dt.datetime.now().strftime("%H:%M:%S")
+            color = color_map.get(level, "#ABB2BF")
+            time_col = "#555D6B"
+            msg_col = "#DCE2EB"
 
-        html = f"<span style='color: #555D6B;'>[{now_str}]</span> " \
-               f"<span style='color: {color}; font-weight: bold;'>[{level.upper()}]</span> " \
-               f"<span style='color: #DCE2EB;'>{message}</span>"
+        html = f"<span style='color: {time_col};'>[{now_str}]</span> " \
+               f"<span style='color: {color}; font-weight: bold;'>[{level}]</span> " \
+               f"<span style='color: {msg_col};'>{message}</span>"
 
         self.console_text.append(html)
         if self.chk_autoscroll.isChecked():
@@ -4767,7 +4802,7 @@ class AstroTelescopeWindow(QMainWindow):
         if self.core:
             self.core.stop_tracking_thread()
             self.core.disconnect()
-        if self.stellarium:
+        if self.stellarium and hasattr(self.stellarium, "stop"):
             self.stellarium.stop()
         event.accept()
 
@@ -4787,6 +4822,7 @@ def launch_app(simulate: bool = False, config_path: str = "telescope_config.json
     app = QApplication.instance()
     if not app:
         app = QApplication(sys.argv)
+    app.setApplicationName("Custom GoTo")
 
     cfg = Config(config_path) if Config else {}
     if simulate:
