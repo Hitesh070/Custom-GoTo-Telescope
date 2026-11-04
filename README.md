@@ -1,6 +1,22 @@
 # Custom GoTo Telescope Mount v4.0
 
-> Professional-grade motorized 3-axis Alt-Azimuth telescope GoTo mount and Stellarium desktop integration bridge for 60mm F/2.8 refractors, powered by Arduino Uno, 28BYJ-48 stepper motors, and ULN2003 drivers. Built with a modern Windows 11 desktop architecture in PyQt6.
+<p align="center">
+  <img src="assets/black_hole_icon.png" width="128" height="128" alt="Custom GoTo Icon" />
+</p>
+
+<p align="center">
+  <b>Professional 3-Axis Motorized Alt-Azimuth GoTo Telescope Controller & Stellarium Bridge</b><br>
+  <i>Engineered for 60mm F/2.8 refractors, Arduino Uno, 28BYJ-48 steppers, and ULN2003 drivers.</i>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Release-v4.0-0284c7?style=for-the-badge&logo=github" alt="Release v4.0" />
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078d4?style=for-the-badge&logo=windows" alt="Platform Windows" />
+  <img src="https://img.shields.io/badge/GUI-PyQt6%20Fluent-10b981?style=for-the-badge&logo=qt" alt="PyQt6 Fluent" />
+  <img src="https://img.shields.io/badge/Python-3.12-38bdf8?style=for-the-badge&logo=python" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/Hardware-Arduino%20Uno-00979d?style=for-the-badge&logo=arduino" alt="Arduino Uno" />
+  <img src="https://img.shields.io/badge/Night%20Vision-Pure%20Red%20OLED-ef4444?style=for-the-badge" alt="Night Vision" />
+</p>
 
 ---
 
@@ -8,14 +24,14 @@
 
 ```mermaid
 flowchart TD
-    subgraph PC["Host Desktop (Windows 11)"]
+    subgraph PC["Host Desktop (Windows 10 / 11)"]
         S["Stellarium Astronomy Software"]
         subgraph BridgeApp["Custom GoTo v4.0 Desktop Application (PyQt6)"]
             ST_SRV["Stellarium TCP Server (Port 10001)"]
             HTTP_CLI["Stellarium HTTP Follower (Port 8090)"]
-            WX_SVC["Live Cloud & Meteorological Telemetry (Open-Meteo)"]
-            CORE["AstroTelescopeCore Engine\n(Astrometry, Meeus Ephemeris, Kinematics)"]
-            GUI["Modern Desktop Interface (src/ui/)\n(Radar, Tonight's Tour, Focus V-Curve, Pure-Red Night Vision)"]
+            WX_SVC["Live Open-Meteo Weather Telemetry"]
+            CORE["AstroTelescopeCore Kinematics Engine\n(Astrometry, Meeus Ephemeris, Kinematics)"]
+            GUI["Modern Windows 11 Fluent Interface\n(Vector Radar, Sky Tour, V-Curve Autofocus, Pure-Red Night Vision)"]
         end
     end
 
@@ -32,7 +48,7 @@ flowchart TD
 
     S <-->|"TCP (Standard Telescope Protocol)"| ST_SRV
     S <-->|"HTTP REST API"| HTTP_CLI
-    WX_SVC -->|"Real-Time Cloud % & Meteorological Data"| GUI
+    WX_SVC -->|"Real-Time Cloud % & Seeing Telemetry"| GUI
     ST_SRV <--> CORE
     HTTP_CLI <--> CORE
     CORE <--> GUI
@@ -44,30 +60,55 @@ flowchart TD
 
 ---
 
+## Key Features in Release v4.0
+
+### Modern Windows 11 Desktop Experience
+* **Professional UI Architecture:** Engineered in PyQt6 following Windows 11 design guidelines, decoupling logic into modular packages (`src/core/` and `src/ui/`).
+* **High-DPI Scaling & Taskbar Integration:** Explicit Windows `AppUserModelID` (`astro.goto.telescope.controller.v3`) for crisp taskbar branding.
+* **Dual Theme Engine:**
+  * **Obsidian Dark Theme:** Deep space backdrop (`#0d1117`), elevated card panels (`#161b22`), and celestial cyan accents (`#38bdf8`).
+  * **Astronomer Pure-Red Night Vision:** True OLED black (`#000000`) and pure crimson (`#ff0033`) eliminating daylight leakage to preserve retinal rhodopsin during dark-sky sessions.
+
+### Precision Astrometry & Kinematics
+* **High-Speed Telemetry Streaming:** 20–25 Hz real-time mount updates with tabular monospace typography that prevents number jitter.
+* **Vector Polar Sky Radar:** Hardware-accelerated `QPainter` celestial projection displaying mount reticle, target reticle, altitude concentric rings, cardinal points, and solar keep-out zone.
+* **Tonight's Best Celestial Tour:** Curated deep-sky and planetary target catalog with real-time altitude visibility filtering, ephemeris calculations, and 1-click slew.
+* **Motorized AutoFocus & V-Curve:** Step jogger, absolute position GoTo, zero position calibration, and automated parabolic V-curve focus routine.
+* **Multi-Rate Tracking Engine:** Multi-rate tracking (Sidereal 15.041"/s, Lunar 14.685"/s, Solar 15.000"/s, King refraction-corrected) and continuous satellite LEO tracking.
+* **Safety Protocols:**
+  * Active solar separation barrier preventing slews within unsafe proximity to the Sun without physical filter verification.
+  * Cable anti-wrap tracking with 1-click unwind routine.
+
+### Hardware Diagnostics
+* **Bidirectional Serial Monitor:** Live packet inspector with ASCII/HEX modes and custom command transmitter.
+* **Meteorological Telemetry:** Live Open-Meteo cloud cover %, temperature, humidity, wind speed, and seeing transparency.
+
+---
+
 ## Repository Structure
 
 ```text
 Custom-GoTo-Telescope/
-├── assets/                     # Application branding & Black Hole icon
+├── assets/                     # Application branding & Black Hole icons
 │   ├── black_hole_icon.ico
 │   └── black_hole_icon.png
 ├── docs/                       # Comprehensive documentation & build guide
 │   └── GoTo_Telescope_v2.1_Build_Guide.docx
-├── firmware/                   # Arduino Uno ATmega328P firmware
+├── firmware/                   # Arduino Uno ATmega328P firmware (Arduino sketchbook format)
 │   └── telescope_firmware/
 │       └── telescope_firmware.ino
-├── scripts/                    # Icon generation and utility scripts
+├── scripts/                    # Utility & icon generation scripts
 │   └── generate_icon.py
 ├── src/                        # Modular application codebase (v4.0)
 │   ├── core/                   # Astrometry, catalog & weather services
-│   │   ├── astrometry.py
-│   │   ├── catalog.py
-│   │   └── weather_service.py
-│   └── ui/                     # Themes, custom widgets, dialogs, main window
-│       ├── theme.py
-│       ├── app.py
-│       ├── main_window.py
-│       ├── widgets/            # Polar sky radar & focus curve
+│   │   ├── astrometry.py       # Ephemeris, coordinates & J2000 precession
+│   │   ├── catalog.py          # Curated Tonight's Best celestial database
+│   │   └── weather_service.py  # Open-Meteo meteorological service
+│   └── ui/                     # Themes, widgets, dialogs, main window
+│       ├── theme.py            # Windows 11 Obsidian & Pure-Red Night Vision stylesheets
+│       ├── app.py              # Application bootstrapper & DPI configuration
+│       ├── main_window.py      # Primary window shell & 20Hz telemetry HUD
+│       ├── widgets/            # Polar sky radar & parabolic focus curve
 │       └── dialogs/            # GoTo, Tour, AutoFocus, Serial Monitor, Settings, Help
 ├── tests/                      # Automated unit & integration verification suite
 │   ├── test_serial_monitor_and_optics.py
@@ -85,47 +126,45 @@ Custom-GoTo-Telescope/
 
 ---
 
-## Hardware & Wiring
+## Hardware & Electronics
 
-### Arduino Pinout
-* **Azimuth Stepper Motor (28BYJ-48 + ULN2003):** Pins `2, 3, 4, 5`
-* **Altitude Stepper Motor (28BYJ-48 + ULN2003):** Pins `6, 7, 8, 9`
-* **Motorized Focuser Stepper (28BYJ-48 + ULN2003):** Pins `10, 11, 12, 13`
-* **Serial Interface:** 115,200 baud, 8-N-1 over standard USB Type-B cable
+### Arduino Uno Pinout
+
+| Axis / Function | Motor / Device | Driver Board | Arduino Pins |
+| :--- | :--- | :--- | :--- |
+| **Azimuth (RA)** | 28BYJ-48 Stepper | ULN2003 Driver | Pins `2, 3, 4, 5` |
+| **Altitude (Dec)** | 28BYJ-48 Stepper | ULN2003 Driver | Pins `6, 7, 8, 9` |
+| **Motorized Focuser** | 28BYJ-48 Stepper | ULN2003 Driver | Pins `10, 11, 12, 13` |
+| **Serial Communication** | Host PC USB | Internal FTDI/CH340 | `115200 baud, 8-N-1` |
+
+> [!IMPORTANT]
+> **Power Supply Requirement:** Never power the ULN2003 driver boards directly from the Arduino's 5V pin. Connect a dedicated external 5V (2A or higher) power supply to the ULN2003 power rails. Tie external Ground and Arduino Ground together.
 
 ---
 
-## Key Features in v4.0
+## Keyboard Shortcuts
 
-* **Modern Windows 11 Desktop UI:**
-  * Clean, responsive layered card architecture in PyQt6 with high-DPI scaling and Windows AppUserModelID registration.
-  * Modern deep obsidian dark theme (`#0d1117`) and astronomical **pure-red dark-sky night vision** (`#ff0033` on `#000000`) preserving human retinal dark adaptation.
-* **Vector Polar Sky Radar:**
-  * Hardware-accelerated QPainter polar projection showing mount reticle, active target reticle, Sun danger keep-out buffer, and cardinal compass bearings.
-* **Tonight's Best Celestial Tour:**
-  * Curated database of planets, Messier objects, Caldwell targets, and bright stars with real-time altitude filtering, ephemeris calculations, and 1-click slew.
-* **Motorized AutoFocus & V-Curve:**
-  * Fine/medium/coarse step jogging, absolute step GoTo, zero position calibration, and automated parabolic V-curve focus routine.
-* **Real-Time Meteorological Telemetry:**
-  * Live Open-Meteo cloud cover %, temperature, humidity, wind, and seeing quality updates directly in the header deck.
-* **Safety Protocols:**
-  * Mandatory solar exclusion safety interlock preventing slews within unsafe angular proximity to the Sun without physical filter verification.
-  * Cable anti-wrap tracking with 1-click unwind routine.
-* **Bidirectional Serial Monitor:**
-  * Raw ASCII and HEX packet stream inspector with custom command terminal.
-* **Standalone Windows Binary:**
-  * Single-file executable [`dist/AstroGoTo.exe`](dist/AstroGoTo.exe) compiled with PyInstaller, containing embedded black hole application icon.
+| Shortcut | Action | Description |
+| :--- | :--- | :--- |
+| `Alt + N` / `Ctrl + N` | **Toggle Night Vision** | Switch between Obsidian Dark and Pure-Red Night Vision |
+| `Space` / `Escape` | **Emergency Stop** | Instantly halts all motor slews and tracking |
+| `Up` / `Down` Arrow | **Altitude Jog** | Step altitude axis up (+) or down (-) |
+| `Left` / `Right` Arrow | **Azimuth Jog** | Step azimuth axis left (CCW) or right (CW) |
+| `Ctrl + T` | **Tonight's Best** | Open curated celestial targets tour dialog |
+| `Ctrl + G` | **GoTo Coordinates** | Open manual celestial coordinate entry dialog |
+| `Ctrl + M` | **Serial Monitor** | Open raw bidirectional serial inspector |
+| `Ctrl + S` | **Settings** | Open mount kinematics and configuration dialog |
 
 ---
 
 ## Getting Started
 
-### 1. Arduino Firmware
+### 1. Upload Arduino Firmware
 1. Open [`firmware/telescope_firmware/telescope_firmware.ino`](firmware/telescope_firmware/telescope_firmware.ino) in the Arduino IDE.
-2. Install the **AccelStepper** library (via Tools -> Manage Libraries).
+2. Install the **AccelStepper** library (via **Tools -> Manage Libraries**).
 3. Connect the Arduino Uno over USB, select the board and COM port, and click **Upload**.
 
-### 2. Running Custom GoTo Desktop
+### 2. Launch the Desktop Application
 Download the standalone executable from [GitHub Releases](https://github.com/Hitesh070/Custom-GoTo-Telescope/releases), or run from source:
 ```bash
 pip install -r requirements.txt
@@ -139,20 +178,33 @@ python telescope_ui_qt.py --simulate
 ```
 
 ### 3. Stellarium Setup
-1. Open Stellarium and go to **Configuration (`F2`) -> Plugins -> Telescope Control -> Enable**.
+1. In Stellarium, open **Configuration (`F2`) -> Plugins -> Telescope Control -> Enable**.
 2. Under Telescopes, click **Add (+)**:
    - Telescope controlled by: **External software or a remote computer**
    - Host: `127.0.0.1`
    - Port: `10001`
-3. Click **Connect**. The telescope reticle will appear on screen!
+3. Click **Connect**. The telescope reticle will appear on screen.
 4. Select any celestial object and press **Ctrl + 1** to slew.
+
+---
+
+## Building Standalone Windows Executable (.exe)
+
+Compile the single-file Windows executable with embedded icon and assets:
+```bash
+python build_exe.py
+```
+The resulting binary is created at:
+```text
+dist/AstroGoTo.exe
+```
 
 ---
 
 ## Automated Verification Suite
 
-Run the full automated test suite covering astrometry, theme propagation, Stellarium synchronization, and kinematics:
+Run the full automated test suite covering astrometry, night vision propagation, Stellarium synchronization, and kinematics:
 ```bash
 python -m unittest discover tests
 ```
-All unit tests pass out of the box.
+All unit tests pass cleanly out of the box.
