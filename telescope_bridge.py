@@ -1314,84 +1314,6 @@ class PointingLogger:
             except Exception as e:
                 logging.error(f"Error appending to pointing log: {e}")
 
-# ==============================================================================
-# STELLARIUM OCULARS & OPTICS LOADER
-# ==============================================================================
-
-def load_stellarium_optics() -> Dict[str, Any]:
-    """Reads telescope and eyepiece configuration directly from Stellarium's Oculars plugin (ocular.ini)."""
-    import configparser
-
-    appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
-    ini_path = os.path.join(appdata, 'Stellarium', 'modules', 'Oculars', 'ocular.ini')
-    if not os.path.exists(ini_path):
-        return {
-            'found': False,
-            'telescope': 'Standard Refractor',
-            'fl': 700.0,
-            'dia': 60.0,
-            'f_ratio': 11.7,
-            'ocular': 'Standard 25mm',
-            'efl': 25.0,
-            'afov': 50.0,
-            'mag': 28.0,
-            'tfov': 1.78,
-            'all_oculars': []
-        }
-
-    try:
-        cp = configparser.ConfigParser(strict=False)
-        cp.read(ini_path, encoding='utf-8')
-
-        t_idx = int(cp.get('General', 'telescope_index', fallback='0'))
-        o_idx = int(cp.get('General', 'ocular_index', fallback='0'))
-
-        t_name = cp.get('telescope', f'{t_idx}\\name', fallback='Generic Telescope')
-        t_fl = float(cp.get('telescope', f'{t_idx}\\focallength', fallback='700'))
-        t_dia = float(cp.get('telescope', f'{t_idx}\\diameter', fallback='60'))
-        f_ratio = t_fl / t_dia if t_dia > 0 else 0.0
-
-        o_name = cp.get('ocular', f'{o_idx}\\name', fallback='Standard Eyepiece')
-        o_efl = float(cp.get('ocular', f'{o_idx}\\efl', fallback='25'))
-        o_afov = float(cp.get('ocular', f'{o_idx}\\afov', fallback='50'))
-        mag = t_fl / o_efl if o_efl > 0 else 1.0
-        tfov = o_afov / mag if mag > 0 else 0.0
-
-        all_oculars = []
-        for i in range(int(cp.get('General', 'ocular_count', fallback='0'))):
-            name = cp.get('ocular', f'{i}\\name', fallback='')
-            is_bino = cp.get('ocular', f'{i}\\binoculars', fallback='false').lower() == 'true'
-            if name and not is_bino:
-                efl = float(cp.get('ocular', f'{i}\\efl', fallback='0'))
-                afov = float(cp.get('ocular', f'{i}\\afov', fallback='0'))
-                o_mag = t_fl / efl if efl > 0 else 1.0
-                o_tfov = afov / o_mag if o_mag > 0 else 0.0
-                all_oculars.append({
-                    'index': i,
-                    'name': name,
-                    'efl': efl,
-                    'afov': afov,
-                    'mag': o_mag,
-                    'tfov': o_tfov
-                })
-
-        all_oculars.sort(key=lambda x: x['efl'], reverse=True)
-
-        return {
-            'found': True,
-            'telescope': t_name,
-            'fl': t_fl,
-            'dia': t_dia,
-            'f_ratio': f_ratio,
-            'ocular': o_name,
-            'efl': o_efl,
-            'afov': o_afov,
-            'mag': mag,
-            'tfov': tfov,
-            'all_oculars': all_oculars
-        }
-    except Exception as e:
-        return {'found': False, 'error': str(e)}
 
 # ==============================================================================
 # BRIDGE CORE LOGIC (Section 8.5)
@@ -1535,12 +1457,19 @@ class BridgeCore:
             self.on_event("WARNING", "Unwind cable ignored: Telescope not connected")
             return False
 
+        cur_az_steps = self.link.latest_telemetry.az_steps
+        cur_az_deg = steps_to_angle(cur_az_steps, self.config["steps_per_deg_az"], self.config["sign_az"])
+        if abs(cur_az_deg) < 0.2:
+            self.on_event("INFO", "Cable is already unwound (0.0° / 0.00 turns)")
+            return True
+
         az_steps = angle_to_steps(0.0, self.config["steps_per_deg_az"], self.config["sign_az"])
         alt_steps = self.link.latest_telemetry.alt_steps
         self.tracking_enabled = False
+        self.target_type = ""
         reply = self.link.send(f"G {az_steps} {alt_steps}")
         if reply == "OK":
-            self.on_event("INFO", "Unwinding cable: Slewing Azimuth to 0° (True North)")
+            self.on_event("INFO", f"Unwinding cable: Slewing Azimuth from {cur_az_deg:+.1f}° to 0.0° (True North)")
             return True
         else:
             self.on_event("ERROR", f"Unwind cable failed: {reply}")

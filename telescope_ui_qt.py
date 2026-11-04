@@ -5,6 +5,7 @@ Version 2.0 - Scientific Human-Engineered Interface with High-Speed Telemetry St
 """
 
 from __future__ import annotations
+import logging
 
 import math
 import os
@@ -44,8 +45,7 @@ try:
         BridgeCore, StellariumServer, Config, StellariumHttpFollower,
         sun_radec, moon_radec, planet_radec, radec_to_altaz, altaz_to_radec, separation_deg, 
         HAS_PYSERIAL, steps_to_angle, julian_date,
-        precess_date_to_j2000, precess_j2000_to_date, lst_deg,
-        load_stellarium_optics
+        precess_date_to_j2000, precess_j2000_to_date, lst_deg
     )
 except ImportError:
     BridgeCore = None
@@ -406,6 +406,68 @@ QComboBox QAbstractItemView {
     color: #DCE2EB;
 }
 
+QComboBox QAbstractItemView::item {
+    color: #DCE2EB;
+    background-color: #1F232B;
+    padding: 4px 8px;
+    min-height: 20px;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: #265585;
+    color: #FFFFFF;
+}
+
+QLineEdit, QDoubleSpinBox, QSpinBox {
+    background-color: #0E1015;
+    border: 1px solid #252A34;
+    border-radius: 3px;
+    color: #DCE2EB;
+    font-family: 'Consolas', 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px;
+}
+
+QTableWidget {
+    background-color: #0E1015;
+    border: 1px solid #252A34;
+    gridline-color: #1A1F29;
+    color: #DCE2EB;
+    selection-background-color: #265585;
+    selection-color: #FFFFFF;
+}
+
+QHeaderView::section {
+    background-color: #1A1E26;
+    color: #8892A0;
+    font-weight: 700;
+    font-size: 11px;
+    border: 1px solid #252A34;
+    padding: 4px;
+}
+
+QMenu {
+    background-color: #1F232B;
+    color: #DCE2EB;
+    border: 1px solid #3B4352;
+}
+
+QMenu::item:selected {
+    background-color: #265585;
+    color: #FFFFFF;
+}
+
+QToolTip {
+    background-color: #1F232B;
+    color: #DCE2EB;
+    border: 1px solid #3B4352;
+}
+
+QMessageBox {
+    background-color: #12151B;
+    color: #DCE2EB;
+}
+
 QCheckBox, QRadioButton {
     font-size: 11px;
     color: #C8D1DC;
@@ -649,6 +711,29 @@ QComboBox QAbstractItemView {
     selection-background-color: #4D0A0A;
     selection-color: #FFAAAA;
     color: #FF4D4D;
+}
+
+QComboBox QAbstractItemView::item {
+    color: #FF4D4D;
+    background-color: #140202;
+    padding: 4px 8px;
+    min-height: 20px;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: #4D0A0A;
+    color: #FFAAAA;
+}
+
+QMenu {
+    background-color: #140202;
+    color: #FF4D4D;
+    border: 1px solid #400808;
+}
+
+QMenu::item:selected {
+    background-color: #4D0A0A;
+    color: #FFAAAA;
 }
 
 QCheckBox, QRadioButton {
@@ -1129,6 +1214,10 @@ class HelpGuideDialog(QDialog):
         self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
         self._build_ui()
 
+    def set_night_mode(self, enabled: bool) -> None:
+        self.night_mode = enabled
+        self.setStyleSheet(NIGHT_VISION_STYLE if enabled else SCIENTIFIC_STYLE)
+
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -1374,6 +1463,10 @@ class SettingsDialog(QDialog):
         self.resize(520, 560)
         self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
         self._build_ui()
+
+    def set_night_mode(self, enabled: bool) -> None:
+        self.night_mode = enabled
+        self.setStyleSheet(NIGHT_VISION_STYLE if enabled else SCIENTIFIC_STYLE)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -2348,15 +2441,7 @@ class TonightSkyTourDialog(QDialog):
         lbl_title.setProperty("class", "title")
         v_head.addWidget(lbl_title)
 
-        self.optics = load_stellarium_optics() if load_stellarium_optics else {}
-        if self.optics.get("found"):
-            t_str = f"{self.optics['telescope']} (D: {self.optics['dia']:.0f}mm, FL: {self.optics['fl']:.0f}mm, f/{self.optics['f_ratio']:.1f})"
-            o_str = f"{self.optics['ocular']} ({self.optics['mag']:.0f}x, {self.optics['tfov']:.2f}° FOV)"
-            sub_text = f"Live Astronomical Visibility | Telescope: {t_str} | Active Eyepiece: {o_str}"
-        else:
-            sub_text = "Live Astronomical Visibility | Telescope & Eyepiece Recommendations"
-
-        self.lbl_sub = QLabel(sub_text)
+        self.lbl_sub = QLabel("Live Astronomical Visibility | Curated Messier, Caldwell, Solar System & Double Stars")
         self.lbl_sub.setProperty("class", "subtitle")
         v_head.addWidget(self.lbl_sub)
         header_lay.addLayout(v_head)
@@ -2458,9 +2543,9 @@ class TonightSkyTourDialog(QDialog):
 
         # Table widget - disable inline cell editing so double-click slews without renaming!
         self.table = QTableWidget()
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
-            "Target Name", "Category", "Const", "Mag", "Altitude", "Azimuth", "Visibility", "Eyepiece"
+            "Target Name", "Category", "Const", "Mag", "Altitude", "Azimuth", "Visibility"
         ])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -2492,7 +2577,7 @@ class TonightSkyTourDialog(QDialog):
         detail_lay.setContentsMargins(14, 12, 14, 12)
         detail_lay.setSpacing(8)
 
-        lbl_det_title = QLabel("TARGET DETAILS & EYEPIECE GUIDE")
+        lbl_det_title = QLabel("TARGET DETAILS & POSITION")
         lbl_det_title.setProperty("class", "section-header")
         detail_lay.addWidget(lbl_det_title)
 
@@ -2503,23 +2588,6 @@ class TonightSkyTourDialog(QDialog):
         self.lbl_target_meta = QLabel("Select an object from the tour list")
         self.lbl_target_meta.setStyleSheet("font-size: 11px; color: #8892A0;" if not self.night_mode else "font-size: 11px; color: #991F1F;")
         detail_lay.addWidget(self.lbl_target_meta)
-
-        # Eyepiece Recommendation Banner Card
-        self.eye_card = QFrame()
-        self.eye_card.setStyleSheet("background-color: #172433; border: 1px solid #2B4B6E; border-radius: 4px; padding: 6px;" if not self.night_mode else "background-color: #240505; border: 1px solid #5C0B0B; border-radius: 4px; padding: 6px;")
-        eye_v = QVBoxLayout(self.eye_card)
-        eye_v.setContentsMargins(6, 6, 6, 6)
-        eye_v.setSpacing(4)
-
-        self.lbl_eye_badge = QLabel("RECOMMENDED: --")
-        self.lbl_eye_badge.setStyleSheet("font-size: 12px; font-weight: 800; color: #FFE082;" if not self.night_mode else "font-size: 12px; font-weight: 800; color: #FF9999;")
-        eye_v.addWidget(self.lbl_eye_badge)
-
-        self.lbl_eye_desc = QLabel("Eyepiece matching guidance will appear here.")
-        self.lbl_eye_desc.setWordWrap(True)
-        self.lbl_eye_desc.setStyleSheet("font-size: 11px; color: #C8D1DC;" if not self.night_mode else "font-size: 11px; color: #FFB3B3;")
-        eye_v.addWidget(self.lbl_eye_desc)
-        detail_lay.addWidget(self.eye_card)
 
         # Coordinates & Seeing Grid
         self.coords_card = QFrame()
@@ -2684,29 +2752,6 @@ class TonightSkyTourDialog(QDialog):
                 entry["visibility"] = "BELOW HORIZON"
                 entry["is_visible"] = False
 
-            # Dynamic Stellarium Oculars Eyepiece Matching
-            if getattr(self, "optics", None) and self.optics.get("found") and self.optics.get("all_oculars"):
-                oculars = self.optics["all_oculars"]
-                cat = entry.get("category", "")
-                name_l = entry.get("name", "").lower()
-
-                if any(w in name_l for w in ["pleiades", "andromeda", "double cluster", "beehive", "ptolemy", "butterfly", "m45", "m31", "m44"]):
-                    best_oc = oculars[0] # Widest true field
-                    role = "Wide-Field Framing"
-                elif cat == "Solar System" or any(w in name_l for w in ["venus", "jupiter", "saturn", "mars", "ring nebula", "albireo", "castor", "polaris", "alcor", "almach", "m57"]):
-                    # High-power planetary/detail ocular (e.g. Celestron Luminos 10mm or Plossl 6mm)
-                    best_oc = next((oc for oc in reversed(oculars) if oc["efl"] >= 6.0), oculars[-1])
-                    role = "High-Power Resolving"
-                else:
-                    # Mid-power DSO/cluster contrast
-                    mid_cands = [oc for oc in oculars if 12.0 <= oc["efl"] <= 30.0]
-                    best_oc = mid_cands[0] if mid_cands else oculars[len(oculars)//2]
-                    role = "Mid-Power Contrast"
-
-                entry["eyepiece"] = f"{best_oc['mag']:.0f}x ({best_oc['efl']:.0f}mm)"
-                entry["eyepiece_badge"] = f"{best_oc['name']} ({best_oc['mag']:.0f}x - {best_oc['tfov']:.2f}° FOV)"
-                entry["eyepiece_detail"] = f"{role}: {best_oc['mag']:.0f}x magnification with {best_oc['tfov']:.2f}° true sky coverage on your {self.optics['telescope']}."
-
             calc_list.append(entry)
 
         self._items_data = calc_list
@@ -2809,11 +2854,6 @@ class TonightSkyTourDialog(QDialog):
             vis_item.setForeground(vis_col)
             self.table.setItem(row, 6, vis_item)
 
-            # Eyepiece
-            eye_item = _make_item(it["eyepiece"])
-            eye_item.setForeground(QColor("#5AA9FF") if not self.night_mode else QColor("#FF8888"))
-            self.table.setItem(row, 7, eye_item)
-
             if prev_selected_name and it["name"] == prev_selected_name:
                 row_to_reselect = row
 
@@ -2846,10 +2886,6 @@ class TonightSkyTourDialog(QDialog):
     def _update_details_panel(self, it: Dict[str, Any]) -> None:
         self.lbl_target_name.setText(it["name"])
         self.lbl_target_meta.setText(f"{it['type']} | Constellation: {it['constellation']} | Visual Mag: {it['mag']:+.1f}")
-
-        # Eyepiece card
-        self.lbl_eye_badge.setText(f"RECOMMENDED EYEPIECE: {it['eyepiece_badge']}")
-        self.lbl_eye_desc.setText(it["eyepiece_detail"])
 
         # Coordinates
         self.lbl_det_altaz.setText(f"Alt {it['alt']:+.1f}°, Az {it['az']:.1f}° ({it['compass']})")
@@ -2892,12 +2928,6 @@ class TonightSkyTourDialog(QDialog):
             self.lbl_target_name.setStyleSheet("font-size: 15px; font-weight: 800; color: #FF6666;" if enabled else "font-size: 15px; font-weight: 800; color: #FFFFFF;")
         if hasattr(self, "lbl_target_meta"):
             self.lbl_target_meta.setStyleSheet("font-size: 11px; color: #991F1F;" if enabled else "font-size: 11px; color: #8892A0;")
-        if hasattr(self, "eye_card"):
-            self.eye_card.setStyleSheet("background-color: #240505; border: 1px solid #5C0B0B; border-radius: 4px; padding: 6px;" if enabled else "background-color: #172433; border: 1px solid #2B4B6E; border-radius: 4px; padding: 6px;")
-        if hasattr(self, "lbl_eye_badge"):
-            self.lbl_eye_badge.setStyleSheet("font-size: 12px; font-weight: 800; color: #FF9999;" if enabled else "font-size: 12px; font-weight: 800; color: #FFE082;")
-        if hasattr(self, "lbl_eye_desc"):
-            self.lbl_eye_desc.setStyleSheet("font-size: 11px; color: #FFB3B3;" if enabled else "font-size: 11px; color: #C8D1DC;")
         if hasattr(self, "coords_card"):
             self.coords_card.setStyleSheet("background-color: #080101; border: 1px solid #330808; border-radius: 3px;" if enabled else "background-color: #12151B; border: 1px solid #2B313D; border-radius: 3px;")
         if hasattr(self, "lbl_det_altaz"):
@@ -3387,6 +3417,7 @@ class SerialMonitorDialog(QDialog):
         self.core = core
         self.night_mode = night_mode
         self.setWindowTitle("Arduino Serial Monitor - Testing")
+        self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
         self.resize(720, 500)
         self._history: List[str] = []
         self._history_idx = -1
@@ -3449,24 +3480,43 @@ class SerialMonitorDialog(QDialog):
         cmd_box = QHBoxLayout()
         cmd_box.setSpacing(8)
 
-        lbl_prompt = QLabel("Command:")
-        lbl_prompt.setStyleSheet("font-weight: 700; color: #8892A0;" if not self.night_mode else "font-weight: 700; color: #AA2222;")
-        cmd_box.addWidget(lbl_prompt)
+        self.lbl_prompt = QLabel("Command:")
+        self.lbl_prompt.setStyleSheet("font-weight: 700; color: #8892A0;" if not self.night_mode else "font-weight: 700; color: #AA2222;")
+        cmd_box.addWidget(self.lbl_prompt)
 
         self.txt_cmd = QLineEdit()
         self.txt_cmd.setPlaceholderText("Enter firmware command (e.g. P, S, H, V 226, G 1000 500) and press Enter")
         self.txt_cmd.returnPressed.connect(self._send_custom_command)
         cmd_box.addWidget(self.txt_cmd, stretch=1)
 
-        btn_send = QPushButton("Send")
-        btn_send.setStyleSheet(
-            "QPushButton { background-color: #1E4472; border: 1px solid #336FA5; color: #FFFFFF; font-weight: 700; padding: 5px 16px; border-radius: 3px; } "
-            "QPushButton:hover { background-color: #285A96; }"
-        )
-        btn_send.clicked.connect(self._send_custom_command)
-        cmd_box.addWidget(btn_send)
+        self.btn_send = QPushButton("Send")
+        if self.night_mode:
+            self.btn_send.setStyleSheet("QPushButton { background-color: #5C0B0B; border: 1px solid #801010; color: #FFAAAA; font-weight: 700; padding: 5px 16px; border-radius: 3px; } QPushButton:hover { background-color: #730E0E; }")
+        else:
+            self.btn_send.setStyleSheet("QPushButton { background-color: #1E4472; border: 1px solid #336FA5; color: #FFFFFF; font-weight: 700; padding: 5px 16px; border-radius: 3px; } QPushButton:hover { background-color: #285A96; }")
+        self.btn_send.clicked.connect(self._send_custom_command)
+        cmd_box.addWidget(self.btn_send)
 
         layout.addLayout(cmd_box)
+
+    def set_night_mode(self, enabled: bool) -> None:
+        self.night_mode = enabled
+        self.setStyleSheet(NIGHT_VISION_STYLE if enabled else SCIENTIFIC_STYLE)
+        if hasattr(self, "terminal"):
+            self.terminal.setStyleSheet(
+                "background-color: #120000; color: #FFAAAA; font-family: 'Consolas', monospace; "
+                "font-size: 12px; border: 1px solid #550000; border-radius: 4px; padding: 6px;"
+                if enabled else
+                "background-color: #0A0D12; color: #DCE2EB; font-family: 'Consolas', 'JetBrains Mono', monospace; "
+                "font-size: 12px; border: 1px solid #2B3340; border-radius: 4px; padding: 6px;"
+            )
+        if hasattr(self, "lbl_prompt"):
+            self.lbl_prompt.setStyleSheet("font-weight: 700; color: #AA2222;" if enabled else "font-weight: 700; color: #8892A0;")
+        if hasattr(self, "btn_send"):
+            if enabled:
+                self.btn_send.setStyleSheet("QPushButton { background-color: #5C0B0B; border: 1px solid #801010; color: #FFAAAA; font-weight: 700; padding: 5px 16px; border-radius: 3px; } QPushButton:hover { background-color: #730E0E; }")
+            else:
+                self.btn_send.setStyleSheet("QPushButton { background-color: #1E4472; border: 1px solid #336FA5; color: #FFFFFF; font-weight: 700; padding: 5px 16px; border-radius: 3px; } QPushButton:hover { background-color: #285A96; }")
 
     def _clear_monitor(self) -> None:
         self.terminal.clear()
@@ -3565,6 +3615,9 @@ class AstroTelescopeWindow(QMainWindow):
         self._was_slewing: bool = False
         self._was_moving: bool = False
         self.tour_window: Optional[TonightSkyTourDialog] = None
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(NIGHT_VISION_STYLE if self.night_mode else SCIENTIFIC_STYLE)
         self.setStyleSheet(NIGHT_VISION_STYLE if self.night_mode else SCIENTIFIC_STYLE)
 
         self.selected_jog_speed: str = "medium"
@@ -3706,12 +3759,7 @@ class AstroTelescopeWindow(QMainWindow):
         self.btn_weather.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
         status_box.addWidget(self.btn_weather)
 
-        # Stellarium Optics Badge
-        self.btn_optics = QPushButton("[OPTICS: LOADING...]")
-        self.btn_optics.setToolTip("Observer telescope & active eyepiece loaded from Stellarium Oculars profile (Click to open Tonight's Best)")
-        self.btn_optics.clicked.connect(self._open_sky_tour)
-        self.btn_optics.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
-        status_box.addWidget(self.btn_optics)
+
 
         layout.addLayout(status_box)
 
@@ -3861,8 +3909,6 @@ class AstroTelescopeWindow(QMainWindow):
         self.combo_stream_rate = QComboBox()
         self.combo_stream_rate.addItems(["Fast Live (25 Hz)", "Normal (1s)"])
         self.combo_stream_rate.currentIndexChanged.connect(self._on_stream_rate_changed)
-        if self.night_mode:
-            self.combo_stream_rate.setStyleSheet("background-color: #140202; border: 1px solid #400808; color: #FF4D4D;")
         head_row.addWidget(self.combo_stream_rate)
 
         lay_mount.addLayout(head_row)
@@ -4314,8 +4360,19 @@ class AstroTelescopeWindow(QMainWindow):
 
     def _apply_active_theme(self) -> None:
         nm = self.night_mode
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(NIGHT_VISION_STYLE if nm else SCIENTIFIC_STYLE)
         self.setStyleSheet(NIGHT_VISION_STYLE if nm else SCIENTIFIC_STYLE)
         self.radar_widget.set_night_mode(nm)
+
+        # Broadcast active night mode to all open top-level dialogs/windows
+        for widget in QApplication.topLevelWidgets():
+            if hasattr(widget, "set_night_mode") and callable(widget.set_night_mode) and widget is not self:
+                try:
+                    widget.set_night_mode(nm)
+                except Exception as e:
+                    logging.debug(f"Error applying night mode to {widget}: {e}")
 
         if hasattr(self, "btn_night_mode"):
             self.btn_night_mode.setText("Night Vision: ON" if nm else "Night Vision")
@@ -4329,8 +4386,6 @@ class AstroTelescopeWindow(QMainWindow):
             self.chk_solar_filter.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF4D4D;" if nm else "font-size: 10px; font-weight: 700; color: #FFFFFF;")
         if hasattr(self, "lbl_data_rate_label"):
             self.lbl_data_rate_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #AA2222;" if nm else "font-size: 11px; font-weight: 600; color: #8892A0;")
-        if hasattr(self, "combo_stream_rate"):
-            self.combo_stream_rate.setStyleSheet("background-color: #140202; border: 1px solid #400808; color: #FF4D4D;" if nm else "")
         if hasattr(self, "lbl_tracking_rate_label"):
             self.lbl_tracking_rate_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #AA2222;" if nm else "font-size: 11px; font-weight: 600; color: #8892A0;")
 
@@ -4370,9 +4425,6 @@ class AstroTelescopeWindow(QMainWindow):
 
         self._style_weather_btn()
 
-        if hasattr(self, "tour_window") and self.tour_window:
-            self.tour_window.set_night_mode(nm)
-
     def _on_audio_toggled(self, checked: bool) -> None:
         pass
 
@@ -4401,8 +4453,12 @@ class AstroTelescopeWindow(QMainWindow):
                     btn.setStyleSheet("font-size: 10px; padding: 3px 6px;")
 
     def _unwind_cable(self) -> None:
-        if self.core:
-            self.core.unwind_cable()
+        if not self.core:
+            return
+        success = self.core.unwind_cable()
+        if success and hasattr(self, "btn_track"):
+            self.btn_track.setText("Tracking: OFF")
+            self.btn_track.setStyleSheet("background-color: #1A0303; border-color: #4D0A0A; color: #FF4D4D;" if self.night_mode else "")
 
     def _sync_scope(self) -> None:
         if self.core:
@@ -4417,8 +4473,7 @@ class AstroTelescopeWindow(QMainWindow):
                     self.core.follower.clear_authorized_target()
                 if self.core.link and self.core.link.is_open:
                     self.core.link.send("S")
-            cur_rate = getattr(self.core, "tracking_rate", "Sidereal").upper()
-            status = f"ON ({cur_rate})" if self.core.tracking_enabled else "OFF"
+            status = "ON" if self.core.tracking_enabled else "OFF"
             self.btn_track.setText(f"Tracking: {status}")
             self.core.on_event("INFO", f"Tracking {status}")
 
@@ -4838,28 +4893,22 @@ class AstroTelescopeWindow(QMainWindow):
             self.btn_track.setText("Tracking: OFF")
             self.btn_track.setStyleSheet("background-color: #1A0303; border-color: #4D0A0A; color: #FF4D4D;" if self.night_mode else "")
 
-        # Cable-Wrap Status Monitoring
+        # Cable-Wrap Status Monitoring (Accurate Physical Angle & Real Strain Limits)
         if hasattr(self, "lbl_cable_wrap") and hasattr(self.core, "get_cable_wrap"):
             wrap_deg, wrap_turns = self.core.get_cable_wrap()
-            if self.night_mode:
-                color = "#FF2222" if abs(wrap_turns) > 0.4 else "#FF4D4D"
+            abs_turns = abs(wrap_turns)
+            if abs_turns >= 1.0:
+                status = "STRAIN"
+                color = "#FF2222" if self.night_mode else "#FF4D4D"
+            elif abs_turns >= 0.75:
+                status = "CAUTION"
+                color = "#FF8844" if self.night_mode else "#FFE082"
             else:
-                color = "#FF7777" if abs(wrap_turns) > 0.4 else "#88C0FF"
-            status = "STRAIN" if abs(wrap_turns) > 0.4 else "OK"
+                status = "OK"
+                color = "#FFAAAA" if self.night_mode else "#88C0FF"
+
             self.lbl_cable_wrap.setText(f"Cable: {wrap_turns:+.2f} turns [{status}]")
             self.lbl_cable_wrap.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {color};")
-
-        # Refresh optics badge from Stellarium Oculars profile
-        if hasattr(self, "btn_optics"):
-            if not hasattr(self, "_cached_optics"):
-                self._cached_optics = load_stellarium_optics() if load_stellarium_optics else {}
-            if self._cached_optics.get("found"):
-                t_n = self._cached_optics['telescope']
-                o_n = self._cached_optics['ocular'].split('(')[0].strip()
-                mag = self._cached_optics['mag']
-                self.btn_optics.setText(f"[{t_n} | {o_n} ({mag:.0f}x)]")
-            else:
-                self.btn_optics.setText("[OPTICS: STELLARIUM]")
 
         # 3. Microsecond-Accurate Astronomy Clocks
         cur_t = self.core.get_time()
