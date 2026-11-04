@@ -143,17 +143,22 @@ class TestTonightBestAlignment(unittest.TestCase):
         self.assertTrue(is_j2000)
 
         # Slew to Venus using _start_slew
-        # Enable solar filter confirmation so safety sweep allows slew near Sun
+        # Enable solar filter confirmation and mock positive altitude so test is deterministic across all 24 hours of day/night
         self.core.solar_filter_confirmed = True
         self.config["solar_filter_installed"] = True
-        tour.selected_item = dict(venus_item)
-        tour.selected_item["calc_ra"] = ra_j2k
-        tour.selected_item["calc_dec"] = dec_j2k
-        tour._start_slew()
+        orig_radec = tb.radec_to_altaz
+        tb.radec_to_altaz = lambda ra, dec, lat, lon, t, **kwargs: (45.0, 231.8)
+        try:
+            tour.selected_item = dict(venus_item)
+            tour.selected_item["calc_ra"] = ra_j2k
+            tour.selected_item["calc_dec"] = dec_j2k
+            tour._start_slew()
 
-        # Check that core slewed to Venus's exact Stellarium coordinates
-        self.assertIn("Venus", tour.lbl_status.text())
-        self.assertIn("Stellarium sync", tour.lbl_status.text())
+            # Check that core slewed to Venus's exact Stellarium coordinates
+            self.assertIn("Venus", tour.lbl_status.text())
+            self.assertIn("Stellarium sync", tour.lbl_status.text())
+        finally:
+            tb.radec_to_altaz = orig_radec
         tour.close()
 
 if __name__ == "__main__":

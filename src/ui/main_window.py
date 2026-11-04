@@ -260,6 +260,19 @@ class AstroTelescopeWindow(QMainWindow):
 
         self._refresh_ports()
 
+        # Web Bridge Server for Vercel & Mobile Remote Control
+        self.web_server: Optional[Any] = None
+        if self.config.get("web_server_enabled", True):
+            try:
+                from src.web_bridge import WebBridgeServer
+                web_port = int(self.config.get("web_server_port", 8080))
+                web_token = str(self.config.get("web_server_token", ""))
+                self.web_server = WebBridgeServer(self.core, host="0.0.0.0", port=web_port, auth_token=web_token)
+                self.web_server.start()
+                self.log_message("INFO", f"Web Bridge API active on port {web_port}")
+            except Exception as e:
+                self.log_message("WARNING", f"Web Bridge startup error: {e}")
+
     def _build_interface(self) -> None:
         root_widget = QWidget()
         self.setCentralWidget(root_widget)
@@ -1880,6 +1893,11 @@ class AstroTelescopeWindow(QMainWindow):
             self.tour_window.close()
         if hasattr(self, 'follower') and self.follower:
             self.follower.stop()
+        if hasattr(self, 'web_server') and self.web_server:
+            try:
+                self.web_server.stop()
+            except Exception:
+                pass
         if self.core:
             self.core.stop_tracking_thread()
             self.core.disconnect()
