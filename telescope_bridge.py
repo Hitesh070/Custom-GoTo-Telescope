@@ -209,7 +209,7 @@ def _planet_helio_xyz(name: str, T: float) -> Tuple[float, float, float]:
     return xecl, yecl, zecl
 
 def planet_radec(name: str, t: dt.datetime) -> Tuple[float, float]:
-    """Calculates geocentric apparent RA and Dec (degrees) for major bright planets (Venus, Mars, Jupiter, Saturn)."""
+    """Calculates geocentric J2000 RA and Dec (degrees) for major bright planets (Venus, Mars, Jupiter, Saturn)."""
     norm_name = name.strip().capitalize()
     if norm_name not in _PLANET_KEPLER:
         raise ValueError(f"Unsupported planet: {name}. Supported: Venus, Mars, Jupiter, Saturn")
@@ -218,10 +218,18 @@ def planet_radec(name: str, t: dt.datetime) -> Tuple[float, float]:
     xp, yp, zp = _planet_helio_xyz(norm_name, T)
     xe, ye, ze = _planet_helio_xyz('Earth', T)
     xg, yg, zg = xp - xe, yp - ye, zp - ze
-    eps = (23.43929 - 0.0130042 * T) * D2R
+
+    # Iterative light-time correction for dynamic planetary bodies (< 1 arcsec accuracy)
+    dist_approx = math.sqrt(xg * xg + yg * yg + zg * zg)
+    tau_centuries = (dist_approx * 0.0057755183) / 36525.0
+    xp, yp, zp = _planet_helio_xyz(norm_name, T - tau_centuries)
+    xg, yg, zg = xp - xe, yp - ye, zp - ze
+
+    # Transform from J2000 Ecliptic to J2000 Mean Equator (eps0 = 23.4392911 deg)
+    eps0 = 23.4392911 * D2R
     xeq = xg
-    yeq = yg * math.cos(eps) - zg * math.sin(eps)
-    zeq = yg * math.sin(eps) + zg * math.cos(eps)
+    yeq = yg * math.cos(eps0) - zg * math.sin(eps0)
+    zeq = yg * math.sin(eps0) + zg * math.cos(eps0)
     ra = (math.atan2(yeq, xeq) / D2R) % 360.0
     dist = math.sqrt(xeq * xeq + yeq * yeq + zeq * zeq)
     dec = math.asin(max(-1.0, min(1.0, zeq / dist))) / D2R

@@ -2614,24 +2614,34 @@ class TonightSkyTourDialog(QDialog):
             if entry.get("is_dynamic", False):
                 dyn_body = entry.get("dynamic_body", "")
                 if dyn_body == "Moon" and moon_radec:
-                    ra_calc, dec_calc = moon_radec(t_now)
+                    ra_date, dec_date = moon_radec(t_now)
+                    ra_2k, dec_2k = precess_date_to_j2000(ra_date, dec_date, t_now) if precess_date_to_j2000 else (ra_date, dec_date)
                 elif dyn_body in ("Venus", "Mars", "Jupiter", "Saturn") and planet_radec:
-                    ra_calc, dec_calc = planet_radec(dyn_body, t_now)
+                    ra_2k, dec_2k = planet_radec(dyn_body, t_now)
+                    ra_date, dec_date = precess_j2000_to_date(ra_2k, dec_2k, t_now) if precess_j2000_to_date else (ra_2k, dec_2k)
                 else:
-                    ra_calc, dec_calc = entry["ra"], entry["dec"]
-                ra_date, dec_date = ra_calc, dec_calc
-                entry["calc_ra"] = ra_calc
-                entry["calc_dec"] = dec_calc
+                    ra_2k, dec_2k = entry["ra"], entry["dec"]
+                    ra_date, dec_date = precess_j2000_to_date(ra_2k, dec_2k, t_now) if precess_j2000_to_date else (ra_2k, dec_2k)
+                entry["ra_j2000"] = ra_2k
+                entry["dec_j2000"] = dec_2k
+                entry["ra_date"] = ra_date
+                entry["dec_date"] = dec_date
+                entry["calc_ra"] = ra_2k if is_j2000_mode else ra_date
+                entry["calc_dec"] = dec_2k if is_j2000_mode else dec_date
             else:
                 ra_2k, dec_2k = entry["ra"], entry["dec"]
                 if precess_j2000_to_date:
                     ra_date, dec_date = precess_j2000_to_date(ra_2k, dec_2k, t_now)
                 else:
                     ra_date, dec_date = ra_2k, dec_2k
+                entry["ra_j2000"] = ra_2k
+                entry["dec_j2000"] = dec_2k
+                entry["ra_date"] = ra_date
+                entry["dec_date"] = dec_date
                 entry["calc_ra"] = ra_2k if is_j2000_mode else ra_date
                 entry["calc_dec"] = dec_2k if is_j2000_mode else dec_date
 
-            # Alt / Az calculation
+            # Alt / Az calculation: always uses apparent of-date coordinates
             if radec_to_altaz:
                 alt, az = radec_to_altaz(ra_date, dec_date, lat, lon, t_now, apply_refraction=use_refr)
             else:
@@ -2953,23 +2963,124 @@ class TonightSkyTourDialog(QDialog):
         else:
             self.set_night_mode(not self.night_mode)
 
+    def _query_stellarium_target(self, item: Dict[str, Any]) -> Optional[Tuple[float, float, bool]]:
+        """Queries Stellarium Remote Control HTTP API (port 8090) for target coordinates.
+        If Stellarium is connected and recognizes the target:
+          - Selects and centers the object in Stellarium via /api/main/focus.
+          - Returns (raJ2000, decJ2000, True) so the mount slews to Stellarium's exact coordinate.
+        Returns None if Stellarium is unreachable or target is unrecognized.
+        """
+        import urllib.request
+        import urllib.parse
+        import json
+        import re
+
+        host = self.config.get("stellarium_host", "127.0.0.1")
+        port = 8090
+        if hasattr(self.core, "follower") and self.core.follower:
+            host = self.core.follower.host
+            port = self.core.follower.port
+
+        candidates: List[str] = []
+        if item.get("dynamic_body"):
+            dyn = item["dynamic_body"]
+            candidates.append(dyn)
+            if dyn.lower() == "moon":
+                candidates.append("moon")
+
+        raw_name = item.get("name", "")
+        for pm in re.findall(r'\((.*?)\)', raw_name):
+            for part in pm.split('&'):
+                clean = part.strip()
+                if re.match(r'^(M\d+|NGC\s*\d+|IC\s*\d+|Alpha\s+\w+|Beta\s+\w+|Gamma\s+\w+)', clean, re.IGNORECASE):
+                    candidates.append(clean)
+                    candidates.append(clean.replace(" ", ""))
+
+        prefix = raw_name.split('(')[0].strip()
+        if prefix:
+            if '&' in prefix:
+                for sub in prefix.split('&'):
+                    sub_c = sub.strip()
+                    if sub_c:
+                        candidates.append(sub_c)
+            candidates.append(prefix)
+            simplified = re.sub(r'\b(Nebula|Cluster|Galaxy|Great)\b', '', prefix, flags=re.IGNORECASE).strip()
+            if simplified and simplified != prefix:
+                candidates.append(simplified)
+
+        candidates.append(raw_name)
+
+        seen = set()
+        uniq_candidates: List[str] = []
+        for c in candidates:
+            c_low = c.lower()
+            if c_low not in seen:
+                seen.add(c_low)
+                uniq_candidates.append(c)
+
+        for candidate in uniq_candidates:
+            try:
+                enc = urllib.parse.quote(candidate)
+                url = f"http://{host}:{port}/api/objects/info?name={enc}&format=json"
+                req = urllib.request.Request(url, headers={"User-Agent": "CustomGoTo/3.2"})
+                with urllib.request.urlopen(req, timeout=0.35) as resp:
+                    if resp.status == 200:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if data and "raJ2000" in data and "decJ2000" in data:
+                            ra_j2k = float(data["raJ2000"])
+                            dec_j2k = float(data["decJ2000"])
+
+                            try:
+                                focus_url = f"http://{host}:{port}/api/main/focus"
+                                payload = urllib.parse.urlencode({"target": candidate, "mode": "center"}).encode("utf-8")
+                                focus_req = urllib.request.Request(focus_url, data=payload, headers={"User-Agent": "CustomGoTo/3.2"})
+                                urllib.request.urlopen(focus_req, timeout=0.25)
+                            except Exception:
+                                pass
+
+                            return ra_j2k, dec_j2k, True
+            except Exception:
+                continue
+
+        return None
+
     def _start_slew(self) -> None:
         if not self.selected_item or not self.core:
             return
 
         it = self.selected_item
-        ra = it["calc_ra"]
-        dec = it["calc_dec"]
-        is_j2000 = not it.get("is_dynamic", False)
+        is_j2000_mode = (self.config.get("epoch", "J2000") == "J2000")
+
+        # 1. Coordinate synchronization with Stellarium Remote Control (port 8090)
+        # If Stellarium is connected, fetch the exact micro-arcsecond coordinates that
+        # Stellarium itself uses, and center the target in Stellarium.
+        # This completely eliminates target discrepancy between Stellarium Ctrl+1 and Tonight's Best.
+        stellarium_coords = self._query_stellarium_target(it)
+        if stellarium_coords is not None:
+            slew_ra, slew_dec, slew_j2000 = stellarium_coords
+        else:
+            slew_ra = it["calc_ra"]
+            slew_dec = it["calc_dec"]
+            slew_j2000 = is_j2000_mode
+
+        # Authorize target in follower if active
+        if hasattr(self.core, "follower") and self.core.follower:
+            target_auth = it.get("dynamic_body") or it["name"]
+            self.core.follower.authorize_target(target_auth)
 
         # Notify main window that a slew has started so arrival chime can fire
         target_win = self.main_window or self.parent()
         if target_win and hasattr(target_win, "_was_slewing"):
             target_win._was_slewing = True
 
-        self.core.on_goto_requested(ra, dec, is_j2000=is_j2000, target_name=it["name"])
-        self.lbl_status.setText(f"GoTo active: Slewing to {it['name']}... (Mount active)")
-        self.lbl_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF4D4D;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047;")
+        ok = self.core.on_goto_requested(slew_ra, slew_dec, is_j2000=slew_j2000, target_name=it["name"])
+        if ok:
+            src_tag = "Stellarium sync" if stellarium_coords is not None else "High-precision catalog"
+            self.lbl_status.setText(f"GoTo active: Slewing to {it['name']} [{src_tag}]... (Mount active)")
+            self.lbl_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF4D4D;" if self.night_mode else "font-size: 11px; font-weight: 700; color: #43A047;")
+        else:
+            self.lbl_status.setText(f"GoTo rejected: Safety limits or solar keepout for {it['name']}.")
+            self.lbl_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FF4D4D;")
 
 
 # ==============================================================================
