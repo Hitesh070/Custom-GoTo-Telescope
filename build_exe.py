@@ -1,6 +1,7 @@
 """
 build_exe.py
-Build script to compile AstroGoTo standalone Windows .exe with Black Hole icon
+Build script to compile Custom GoTo / AstroGoTo standalone Windows .exe with Black Hole icon
+and modular UI architecture.
 """
 
 import os
@@ -9,7 +10,7 @@ import sys
 
 def build():
     print("=" * 60)
-    print("Building AstroGoTo Standalone Executable")
+    print("Building AstroGoTo Standalone Windows Executable")
     print("=" * 60)
 
     cmd = [
@@ -20,6 +21,10 @@ def build():
         "--icon=assets/black_hole_icon.ico",
         "--add-data=assets;assets",
         "--add-data=telescope_config.example.json;.",
+        "--add-data=src;src",
+        "--hidden-import=src",
+        "--hidden-import=src.core",
+        "--hidden-import=src.ui",
         "--clean",
         "telescope_ui_qt.py"
     ]
@@ -33,6 +38,7 @@ def build():
         print("=" * 60)
     else:
         print("\nBuild failed with exit code:", res.returncode)
+        sys.exit(res.returncode)
 
 if __name__ == "__main__":
     build()
