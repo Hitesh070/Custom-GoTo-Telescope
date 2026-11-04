@@ -2909,8 +2909,8 @@ class TonightSkyTourDialog(QDialog):
                 self.lbl_det_sun.setText(f"{it['sun_sep']:.1f}° [DANGER < 15°]")
                 self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #FF6666;" if not self.night_mode else "font-weight: 700; color: #FF2222;")
         else:
-            self.lbl_det_sun.setText(f"{it['sun_sep']:.1f}° [Safe]")
-            self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #8CD68C;" if not self.night_mode else "font-weight: 700; color: #FFAAAA;")
+            self.lbl_det_sun.setText(f"{it['sun_sep']:.1f}°")
+            self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #FFAAAA;" if self.night_mode else "font-weight: 700; color: #8CD68C;")
 
         self.txt_desc.setText(it["description"])
         self.btn_slew.setEnabled(True)
@@ -2940,6 +2940,15 @@ class TonightSkyTourDialog(QDialog):
             self.txt_desc.setStyleSheet("background-color: #060101; border: 1px solid #2E0505; color: #FF6666; font-size: 11px;" if enabled else "background-color: #0E1015; border: 1px solid #242832; color: #A0ABB8; font-size: 11px;")
         if hasattr(self, "lbl_status"):
             self.lbl_status.setStyleSheet("font-size: 11px; color: #991F1F;" if enabled else "font-size: 11px; color: #8892A0;")
+        if hasattr(self, "lbl_det_sun"):
+            has_filter = getattr(self.core, 'solar_filter_confirmed', False) or self.config.get("solar_filter_installed", False)
+            if self.selected_item and self.selected_item.get("sun_sep", 99.0) < float(self.config.get("sun_keepout_deg", 15.0)):
+                if has_filter:
+                    self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #FF9999;" if enabled else "font-weight: 700; color: #FFE082;")
+                else:
+                    self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #FF2222;" if enabled else "font-weight: 700; color: #FF6666;")
+            else:
+                self.lbl_det_sun.setStyleSheet("font-weight: 700; color: #FFAAAA;" if enabled else "font-weight: 700; color: #8CD68C;")
         self._style_weather_card()
         self._refresh_all_targets(force_recalc=True)
 
@@ -3654,6 +3663,7 @@ class AstroTelescopeWindow(QMainWindow):
 
         self._build_interface()
         self._setup_shortcuts()
+        self._apply_active_theme()
 
         # HIGH-SPEED TELEMETRY TIMER: 40 ms = 25 FPS for smooth, real-time ticking
         self.timer = QTimer(self)
@@ -4356,7 +4366,60 @@ class AstroTelescopeWindow(QMainWindow):
     def _style_weather_btn(self) -> None:
         if not hasattr(self, "btn_weather"):
             return
-        self.btn_weather.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
+        if self.night_mode:
+            self.btn_weather.setStyleSheet(
+                "background-color: #1A0303; border: 1px solid #4D0A0A; color: #FFAAAA; "
+                "font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;"
+            )
+        else:
+            self.btn_weather.setStyleSheet(
+                "background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; "
+                "font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;"
+            )
+
+    def _update_connection_indicators(self) -> None:
+        if not hasattr(self, "lbl_serial_status") or not hasattr(self, "lbl_stellarium_status"):
+            return
+
+        nm = self.night_mode
+
+        # Arduino status badge
+        if self.core.link and self.core.link.is_open:
+            is_sim = type(self.core.link).__name__ == "SimLink" or getattr(self.core.link, "is_simulated", False)
+            if is_sim:
+                self.lbl_serial_status.setText("ARDUINO: SIMULATED")
+                if nm:
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #4A1020; padding: 4px 8px; border: 1px solid #801830; border-radius: 3px;")
+                else:
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E4472; padding: 4px 8px; border: 1px solid #2B6496; border-radius: 3px;")
+            else:
+                self.lbl_serial_status.setText("ARDUINO: CONNECTED")
+                if nm:
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #5C0B0B; padding: 4px 8px; border: 1px solid #991414; border-radius: 3px;")
+                else:
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
+        else:
+            self.lbl_serial_status.setText("ARDUINO: DISCONNECTED")
+            if nm:
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #AA2222; background-color: #1A0303; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 3px;")
+            else:
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
+
+        # Stellarium status badge
+        stel_conn = bool(self.stellarium and self.stellarium.is_client_connected)
+        if stel_conn:
+            self.lbl_stellarium_status.setText("STELLARIUM: CONNECTED")
+            if nm:
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #5C0B0B; padding: 4px 8px; border: 1px solid #991414; border-radius: 3px;")
+            else:
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
+        else:
+            port_num = self.config.get("stellarium_port", 10001)
+            self.lbl_stellarium_status.setText(f"STELLARIUM: LISTENING [{port_num}]")
+            if nm:
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #AA2222; background-color: #1A0303; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 3px;")
+            else:
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
 
     def _apply_active_theme(self) -> None:
         nm = self.night_mode
@@ -4424,6 +4487,7 @@ class AstroTelescopeWindow(QMainWindow):
                 self.btn_satellite_follow.setStyleSheet("")
 
         self._style_weather_btn()
+        self._update_connection_indicators()
 
     def _on_audio_toggled(self, checked: bool) -> None:
         pass
@@ -4850,17 +4914,8 @@ class AstroTelescopeWindow(QMainWindow):
                     break
 
         # 2. Connection indicators
-        if self.core.link and self.core.link.is_open:
-            is_sim = type(self.core.link).__name__ == "SimLink" or getattr(self.core.link, "is_simulated", False)
-            if is_sim:
-                self.lbl_serial_status.setText("ARDUINO: SIMULATED")
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E4472; padding: 4px 8px; border: 1px solid #2B6496; border-radius: 3px;")
-            else:
-                self.lbl_serial_status.setText("ARDUINO: CONNECTED")
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
-        else:
-            self.lbl_serial_status.setText("ARDUINO: DISCONNECTED")
-            self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
+        self._update_connection_indicators()
+        if not (self.core.link and self.core.link.is_open):
             if self.btn_connect.text() != "Connect":
                 self.btn_connect.setText("Connect")
                 self.btn_connect.setProperty("class", "primary")
@@ -4868,13 +4923,6 @@ class AstroTelescopeWindow(QMainWindow):
                 self.btn_connect.style().polish(self.btn_connect)
 
         stel_conn = bool(self.stellarium and self.stellarium.is_client_connected)
-        if stel_conn:
-            self.lbl_stellarium_status.setText("STELLARIUM: CONNECTED")
-            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
-        else:
-            port_num = self.config.get("stellarium_port", 10001)
-            self.lbl_stellarium_status.setText(f"STELLARIUM: LISTENING [{port_num}]")
-            self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
 
         # Auto-sync location from Stellarium whenever connected
         if stel_conn and not getattr(self, "_prev_stellarium_connected", False):
