@@ -11,6 +11,8 @@ ENV/
 # Logs & Runtime
 *.log
 pointing_log.csv
+logs/*
+!logs/.gitkeep
 
 # PyInstaller builds
 build/

@@ -1260,7 +1260,7 @@ class StellariumHttpFollower:
 # ==============================================================================
 
 class PointingLogger:
-    """Logs pointing events, GOTOs, SYNCs and jogs to CSV file."""
+    """Logs pointing events, GOTOs, SYNCs and jogs organized date-wise in a single canonical logs directory."""
 
     CSV_HEADER = [
         "utc_time", "event", "target_ra_deg", "target_dec_deg",
@@ -1268,52 +1268,203 @@ class PointingLogger:
     ]
 
     @staticmethod
-    def get_default_log_path() -> str:
+    def get_canonical_log_dir() -> str:
+        """Resolves the single canonical log directory across all execution modes."""
         if getattr(sys, 'frozen', False):
-            app_data = os.environ.get('APPDATA') or os.path.expanduser('~')
-            target_dir = os.path.join(app_data, 'CustomGoTo')
-            os.makedirs(target_dir, exist_ok=True)
-            return os.path.join(target_dir, 'pointing_log.csv')
-        return "pointing_log.csv"
+            exe_path = os.path.abspath(sys.executable)
+            exe_dir = os.path.dirname(exe_path)
+            # If running inside repo's dist/ folder, target repo root / logs
+            if os.path.basename(exe_dir).lower() == 'dist':
+                repo_root = os.path.dirname(exe_dir)
+                target_dir = os.path.join(repo_root, 'logs')
+            elif os.path.exists(os.path.join(exe_dir, 'telescope_config.json')):
+                target_dir = os.path.join(exe_dir, 'logs')
+            else:
+                app_data = os.environ.get('APPDATA') or os.path.expanduser('~')
+                target_dir = os.path.join(app_data, 'CustomGoTo', 'logs')
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            target_dir = os.path.join(base_dir, 'logs')
+        os.makedirs(target_dir, exist_ok=True)
+        return target_dir
+
+    @staticmethod
+    def get_default_log_path() -> str:
+        log_dir = PointingLogger.get_canonical_log_dir()
+        date_str = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        return os.path.join(log_dir, f"pointing_log_{date_str}.csv")
 
     def __init__(self, filename: Optional[str] = None):
-        self.filename = filename or self.get_default_log_path()
         self.lock = threading.Lock()
-        self._ensure_header()
+        if filename:
+            self.log_dir = os.path.dirname(os.path.abspath(filename))
+            self.excel_path = os.path.join(self.log_dir, "pointing_log.xlsx")
+            self.custom_file = filename
+        else:
+            self.log_dir = self.get_canonical_log_dir()
+            self.excel_path = os.path.join(self.log_dir, "pointing_log.xlsx")
+            self.custom_file = None
+        self.filename = self.custom_file or self.get_default_log_path()
+        self._migrate_legacy_logs()
 
-    def _ensure_header(self) -> None:
-        if not os.path.exists(self.filename) or os.path.getsize(self.filename) == 0:
+    def _migrate_legacy_logs(self) -> None:
+        """Migrates unorganized pointing_log.csv from root and dist/ into date-wise sheets in one batch."""
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            os.path.join(base_dir, "pointing_log.csv"),
+            os.path.join(base_dir, "dist", "pointing_log.csv"),
+        ]
+        has_legacy = any(os.path.exists(f) and os.path.getsize(f) > 0 for f in candidates)
+        if not has_legacy:
+            return
+
+        date_groups: Dict[str, List[list]] = {}
+        for old_file in candidates:
+            if os.path.exists(old_file) and os.path.getsize(old_file) > 0:
+                try:
+                    with open(old_file, "r", encoding="utf-8") as f:
+                        reader = csv.reader(f)
+                        header = next(reader, None)
+                        for row in reader:
+                            if row and len(row) >= 2:
+                                t_str = row[0].strip()
+                                event = row[1].strip() if len(row) > 1 else ""
+                                ra = float(row[2]) if len(row) > 2 and row[2] else None
+                                dec = float(row[3]) if len(row) > 3 and row[3] else None
+                                alt = float(row[4]) if len(row) > 4 and row[4] else None
+                                az = float(row[5]) if len(row) > 5 and row[5] else None
+                                az_s = int(row[6]) if len(row) > 6 and row[6] else None
+                                alt_s = int(row[7]) if len(row) > 7 and row[7] else None
+                                note = row[8] if len(row) > 8 else ""
+                                date_str = t_str[:10] if len(t_str) >= 10 else dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+                                formatted_row = [
+                                    t_str, event,
+                                    f"{ra:.4f}" if ra is not None else "",
+                                    f"{dec:.4f}" if dec is not None else "",
+                                    f"{alt:.4f}" if alt is not None else "",
+                                    f"{az:.4f}" if az is not None else "",
+                                    str(az_s) if az_s is not None else "",
+                                    str(alt_s) if alt_s is not None else "",
+                                    note
+                                ]
+                                date_groups.setdefault(date_str, []).append(formatted_row)
+                    os.remove(old_file)
+                    logging.info(f"Migrated and removed legacy pointing log: {old_file}")
+                except Exception as e:
+                    logging.warning(f"Legacy pointing log migration notice for {old_file}: {e}")
+
+        if not date_groups:
+            return
+
+        # Write to date-wise CSVs in bulk
+        for date_str, rows in date_groups.items():
+            csv_path = os.path.join(self.log_dir, f"pointing_log_{date_str}.csv")
+            is_new = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
             try:
-                with open(self.filename, "w", newline="", encoding="utf-8") as f:
+                with open(csv_path, "a", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-                    writer.writerow(self.CSV_HEADER)
+                    if is_new:
+                        writer.writerow(self.CSV_HEADER)
+                    writer.writerows(rows)
             except Exception as e:
-                logging.error(f"Error creating pointing log header: {e}")
+                logging.error(f"Error writing bulk CSV {csv_path}: {e}")
+
+        # Write to Excel in single batch save
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill
+            if os.path.exists(self.excel_path):
+                wb = openpyxl.load_workbook(self.excel_path)
+            else:
+                wb = openpyxl.Workbook()
+                if "Sheet" in wb.sheetnames:
+                    wb.remove(wb["Sheet"])
+
+            for date_str, rows in date_groups.items():
+                if date_str in wb.sheetnames:
+                    ws = wb[date_str]
+                else:
+                    ws = wb.create_sheet(title=date_str)
+                    ws.append(self.CSV_HEADER)
+                    for cell in ws[1]:
+                        cell.font = Font(bold=True, color="FFFFFF")
+                        cell.fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
+                for r in rows:
+                    ws.append(r)
+
+            wb.save(self.excel_path)
+            wb.close()
+            logging.info(f"Successfully migrated legacy pointing entries to Excel workbook: {self.excel_path}")
+        except Exception as e:
+            logging.debug(f"Excel batch migration notice: {e}")
 
     def log(self, event: str, target_ra: Optional[float] = None, target_dec: Optional[float] = None,
             target_alt: Optional[float] = None, target_az: Optional[float] = None,
             az_steps: Optional[int] = None, alt_steps: Optional[int] = None,
             note: str = "", utc_time_str: Optional[str] = None) -> None:
         with self.lock:
-            try:
-                t_str = utc_time_str or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                row = [
-                    t_str,
-                    event,
-                    f"{target_ra:.4f}" if target_ra is not None else "",
-                    f"{target_dec:.4f}" if target_dec is not None else "",
-                    f"{target_alt:.4f}" if target_alt is not None else "",
-                    f"{target_az:.4f}" if target_az is not None else "",
-                    str(az_steps) if az_steps is not None else "",
-                    str(alt_steps) if alt_steps is not None else "",
-                    note
-                ]
-                with open(self.filename, "a", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    writer.writerow(row)
-            except Exception as e:
-                logging.error(f"Error appending to pointing log: {e}")
+            t_str = utc_time_str or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            self._append_entry(t_str, event, target_ra, target_dec, target_alt, target_az, az_steps, alt_steps, note)
 
+    def _append_entry(self, t_str: str, event: str, target_ra: Optional[float], target_dec: Optional[float],
+                      target_alt: Optional[float], target_az: Optional[float],
+                      az_steps: Optional[int], alt_steps: Optional[int], note: str) -> None:
+        try:
+            date_str = t_str[:10] if len(t_str) >= 10 else dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+
+            # 1. Append to date-wise CSV sheet
+            csv_path = self.custom_file or os.path.join(self.log_dir, f"pointing_log_{date_str}.csv")
+            is_new = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
+            row = [
+                t_str,
+                event,
+                f"{target_ra:.4f}" if target_ra is not None else "",
+                f"{target_dec:.4f}" if target_dec is not None else "",
+                f"{target_alt:.4f}" if target_alt is not None else "",
+                f"{target_az:.4f}" if target_az is not None else "",
+                str(az_steps) if az_steps is not None else "",
+                str(alt_steps) if alt_steps is not None else "",
+                note
+            ]
+            with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                if is_new:
+                    writer.writerow(self.CSV_HEADER)
+                writer.writerow(row)
+
+            # 2. Append to date-wise worksheet tab in Excel (.xlsx)
+            self._append_excel(date_str, row)
+
+        except Exception as e:
+            logging.error(f"Error appending to date-wise pointing log: {e}")
+
+    def _append_excel(self, date_str: str, row: list) -> None:
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill
+            if os.path.exists(self.excel_path):
+                wb = openpyxl.load_workbook(self.excel_path)
+            else:
+                wb = openpyxl.Workbook()
+                if "Sheet" in wb.sheetnames:
+                    wb.remove(wb["Sheet"])
+
+            if date_str in wb.sheetnames:
+                ws = wb[date_str]
+            else:
+                ws = wb.create_sheet(title=date_str)
+                ws.append(self.CSV_HEADER)
+                for cell in ws[1]:
+                    cell.font = Font(bold=True, color="FFFFFF")
+                    cell.fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
+
+            ws.append(row)
+            wb.save(self.excel_path)
+            wb.close()
+        except ImportError:
+            pass
+        except Exception as e:
+            logging.debug(f"Excel pointing log append notice: {e}")
 
 # ==============================================================================
 # BRIDGE CORE LOGIC (Section 8.5)

@@ -1840,6 +1840,18 @@ class AstroTelescopeWindow(QMainWindow):
             self._console_history = self._console_history[-1000:]
         self._append_console_entry(now_str, level.upper(), message)
 
+        # Date-wise application activity logging in canonical logs/ directory
+        try:
+            from telescope_bridge import PointingLogger
+            log_dir = PointingLogger.get_canonical_log_dir()
+            today_str = dt.datetime.now().strftime("%Y-%m-%d")
+            app_log_file = os.path.join(log_dir, f"app_{today_str}.log")
+            timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            with open(app_log_file, "a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] [{level.upper()}] {message}\n")
+        except Exception:
+            pass
+
     def _append_console_entry(self, now_str: str, level: str, message: str) -> None:
         if self.night_mode:
             color_map = {
