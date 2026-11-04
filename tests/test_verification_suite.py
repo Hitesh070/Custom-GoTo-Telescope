@@ -1,7 +1,7 @@
 """
 full_verification_suite.py
 Comprehensive End-to-End Automated Verification Test Suite for
-AstroGoTo v2.0 Telescope Controller & Stellarium Bridge.
+Custom GoTo v4.0 Telescope Controller & Stellarium Bridge.
 """
 
 import sys, os
@@ -26,7 +26,7 @@ from telescope_bridge import (
 
 def run_suite():
     print("=" * 75)
-    print("ASTROGOTO v2.0 - FULL SYSTEM VERIFICATION SUITE")
+    print("CUSTOM GOTO v4.0 - FULL SYSTEM VERIFICATION SUITE")
     print("=" * 75)
     
     passed_tests = 0

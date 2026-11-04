@@ -117,7 +117,7 @@ class HelpGuideDialog(QDialog):
 
         <h4>Step B: Operating the Bridge & Software</h4>
         <ol>
-          <li><b>Launch App:</b> Run <code>python telescope_ui_qt.py</code> or double-click <code>run_app.bat</code> (or <code>dist/AstroGoTo.exe</code>).</li>
+          <li><b>Launch App:</b> Run <code>python telescope_ui_qt.py</code> or double-click <code>run_app.bat</code> (or <code>dist/CustomGoTo.exe</code>).</li>
           <li><b>Select Connection:</b> Choose your Arduino COM port and click <b>Connect</b> (or check <b>Simulate Uno</b> for software testing).</li>
           <li><b>Initial Orientation:</b> Point the telescope True North and level the tube horizontally. Click <b>Zero Position (0,0)</b> or use <b>Home Altitude</b>.</li>
         </ol>
@@ -133,8 +133,8 @@ class HelpGuideDialog(QDialog):
             </ul>
           </li>
           <li>Click <b>Connect</b>. The telescope reticle will appear on the Stellarium sky chart!</li>
-          <li><b>Coordinate System (Epoch):</b> In Telescope Properties, ensure the <b>Coordinate system</b> setting is set to <b>J2000 (default)</b> to match AstroGoTo. If you switch to <i>Equinox of the date (JNow)</i>, change the Epoch dropdown in AstroGoTo Settings to JNow as well so there is zero precession discrepancy.</li>
-          <li><b>Observer Location:</b> Ensure Stellarium's location matches your observing site, or open Settings in AstroGoTo and click <b>Sync Location from Stellarium</b> to pull coordinates automatically over port 8090.</li>
+          <li><b>Coordinate System (Epoch):</b> In Telescope Properties, ensure the <b>Coordinate system</b> setting is set to <b>J2000 (default)</b> to match Custom GoTo. If you switch to <i>Equinox of the date (JNow)</i>, change the Epoch dropdown in Custom GoTo Settings to JNow as well so there is zero precession discrepancy.</li>
+          <li><b>Observer Location:</b> Ensure Stellarium's location matches your observing site, or open Settings in Custom GoTo and click <b>Sync Location from Stellarium</b> to pull coordinates automatically over port 8090.</li>
           <li>Click any celestial object in Stellarium and press <b>Ctrl + 1</b>. The mount will automatically slew and track!</li>
         </ol>
         """)
@@ -155,7 +155,7 @@ class HelpGuideDialog(QDialog):
           <li><b>Galactic (l, b):</b> Coordinate system aligned with the plane of the Milky Way galaxy.</li>
           <li><b>Ecliptic (lambda, beta):</b> Coordinate system aligned with Earth's orbital plane around the Sun.</li>
           <li><b>Parallactic Angle:</b> The angle between the celestial pole and the local zenith at the object.</li>
-          <li><b>Atmospheric Refraction Correction:</b> Earth's atmosphere lifts objects near the horizon by up to 35 arcminutes (the width of the full Moon!). AstroGoTo integrates high-precision Saemundsson (1986) & Bennett (1982) formulas scaled for site temperature and barometric pressure, with exact 5-pass fixed-point inversion so pointing matches apparent sky positions down to sub-arcsecond accuracy.</li>
+          <li><b>Atmospheric Refraction Correction:</b> Earth's atmosphere lifts objects near the horizon by up to 35 arcminutes (the width of the full Moon!). Custom GoTo integrates high-precision Saemundsson (1986) & Bennett (1982) formulas scaled for site temperature and barometric pressure, with exact 5-pass fixed-point inversion so pointing matches apparent sky positions down to sub-arcsecond accuracy.</li>
           <li><b>Multi-Rate Celestial Kinematics:</b>
             <ul>
               <li><b>Sidereal:</b> Standard star rate (15.041"/s) for stars, nebulae, and deep sky targets.</li>

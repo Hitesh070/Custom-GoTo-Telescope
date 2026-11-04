@@ -1,6 +1,6 @@
 """
 build_exe.py
-Build script to compile Custom GoTo / AstroGoTo standalone Windows .exe with Black Hole icon
+Build script to compile Custom GoTo standalone Windows .exe with Black Hole icon
 and modular UI architecture.
 """
 
@@ -10,12 +10,12 @@ import sys
 
 def build():
     print("=" * 60)
-    print("Building AstroGoTo Standalone Windows Executable")
+    print("Building Custom GoTo Standalone Windows Executable")
     print("=" * 60)
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--name=AstroGoTo",
+        "--name=CustomGoTo",
         "--onefile",
         "--windowed",
         "--icon=assets/black_hole_icon.ico",
@@ -34,7 +34,7 @@ def build():
     if res.returncode == 0:
         print("\n" + "=" * 60)
         print("BUILD SUCCESSFUL!")
-        print("Executable located at: dist/AstroGoTo.exe")
+        print("Executable located at: dist/CustomGoTo.exe")
         print("=" * 60)
     else:
         print("\nBuild failed with exit code:", res.returncode)

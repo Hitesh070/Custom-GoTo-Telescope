@@ -172,7 +172,7 @@ class SettingsDialog(QDialog):
         host = self.txt_host.text().strip() or "127.0.0.1"
         url = f"http://{host}:8090/api/main/status"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "AstroGoTo-Bridge/2.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "CustomGoTo-Bridge/4.0"})
             with urllib.request.urlopen(req, timeout=1.5) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))

@@ -310,10 +310,10 @@ class Config:
 
     @staticmethod
     def get_default_path() -> str:
-        """Returns standard configuration file path, using %APPDATA%/AstroGoTo when frozen."""
+        """Returns standard configuration file path, using %APPDATA%/CustomGoTo when frozen."""
         if getattr(sys, 'frozen', False):
             app_data = os.environ.get('APPDATA') or os.path.expanduser('~')
-            target_dir = os.path.join(app_data, 'AstroGoTo')
+            target_dir = os.path.join(app_data, 'CustomGoTo')
             os.makedirs(target_dir, exist_ok=True)
             return os.path.join(target_dir, 'telescope_config.json')
         return "telescope_config.json"
@@ -1136,7 +1136,7 @@ class StellariumHttpFollower:
         import json
         url = f"http://{self.host}:{self.port}/api/main/status"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "AstroGoTo-Bridge/2.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "CustomGoTo-Bridge/4.0"})
             with urllib.request.urlopen(req, timeout=1.5) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode("utf-8"))
@@ -1180,7 +1180,7 @@ class StellariumHttpFollower:
 
         while not self._stop_event.is_set():
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": "AstroGoTo-Bridge/2.0"})
+                req = urllib.request.Request(url, headers={"User-Agent": "CustomGoTo-Bridge/4.0"})
                 with urllib.request.urlopen(req, timeout=0.8) as resp:
                     if resp.status == 200:
                         raw = resp.read().decode("utf-8")
@@ -1271,7 +1271,7 @@ class PointingLogger:
     def get_default_log_path() -> str:
         if getattr(sys, 'frozen', False):
             app_data = os.environ.get('APPDATA') or os.path.expanduser('~')
-            target_dir = os.path.join(app_data, 'AstroGoTo')
+            target_dir = os.path.join(app_data, 'CustomGoTo')
             os.makedirs(target_dir, exist_ok=True)
             return os.path.join(target_dir, 'pointing_log.csv')
         return "pointing_log.csv"

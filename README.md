@@ -170,7 +170,7 @@ Download the standalone executable from [GitHub Releases](https://github.com/Hit
 pip install -r requirements.txt
 python telescope_ui_qt.py
 ```
-*(Or double-click `run_app.bat` or launch `dist/AstroGoTo.exe`)*.
+*(Or double-click `run_app.bat` or launch `dist/CustomGoTo.exe`)*.
 
 Add `--simulate` to test the mount with virtual motors and simulated telemetry without physical hardware:
 ```bash
@@ -196,7 +196,7 @@ python build_exe.py
 ```
 The resulting binary is created at:
 ```text
-dist/AstroGoTo.exe
+dist/CustomGoTo.exe
 ```
 
 ---
