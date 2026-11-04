@@ -44,7 +44,8 @@ try:
         BridgeCore, StellariumServer, Config, StellariumHttpFollower,
         sun_radec, moon_radec, planet_radec, radec_to_altaz, altaz_to_radec, separation_deg, 
         HAS_PYSERIAL, steps_to_angle, julian_date,
-        precess_date_to_j2000, precess_j2000_to_date, lst_deg
+        precess_date_to_j2000, precess_j2000_to_date, lst_deg,
+        load_stellarium_optics
     )
 except ImportError:
     BridgeCore = None
@@ -2347,9 +2348,17 @@ class TonightSkyTourDialog(QDialog):
         lbl_title.setProperty("class", "title")
         v_head.addWidget(lbl_title)
 
-        lbl_sub = QLabel("Live Astronomical Visibility | Refractor 60mm F/2.8 | Eyepiece Recommendations (20x, 30x, 40x)")
-        lbl_sub.setProperty("class", "subtitle")
-        v_head.addWidget(lbl_sub)
+        self.optics = load_stellarium_optics() if load_stellarium_optics else {}
+        if self.optics.get("found"):
+            t_str = f"{self.optics['telescope']} (D: {self.optics['dia']:.0f}mm, FL: {self.optics['fl']:.0f}mm, f/{self.optics['f_ratio']:.1f})"
+            o_str = f"{self.optics['ocular']} ({self.optics['mag']:.0f}x, {self.optics['tfov']:.2f}° FOV)"
+            sub_text = f"Live Astronomical Visibility | Telescope: {t_str} | Active Eyepiece: {o_str}"
+        else:
+            sub_text = "Live Astronomical Visibility | Telescope & Eyepiece Recommendations"
+
+        self.lbl_sub = QLabel(sub_text)
+        self.lbl_sub.setProperty("class", "subtitle")
+        v_head.addWidget(self.lbl_sub)
         header_lay.addLayout(v_head)
         header_lay.addStretch()
 
@@ -2674,6 +2683,29 @@ class TonightSkyTourDialog(QDialog):
             else:
                 entry["visibility"] = "BELOW HORIZON"
                 entry["is_visible"] = False
+
+            # Dynamic Stellarium Oculars Eyepiece Matching
+            if getattr(self, "optics", None) and self.optics.get("found") and self.optics.get("all_oculars"):
+                oculars = self.optics["all_oculars"]
+                cat = entry.get("category", "")
+                name_l = entry.get("name", "").lower()
+
+                if any(w in name_l for w in ["pleiades", "andromeda", "double cluster", "beehive", "ptolemy", "butterfly", "m45", "m31", "m44"]):
+                    best_oc = oculars[0] # Widest true field
+                    role = "Wide-Field Framing"
+                elif cat == "Solar System" or any(w in name_l for w in ["venus", "jupiter", "saturn", "mars", "ring nebula", "albireo", "castor", "polaris", "alcor", "almach", "m57"]):
+                    # High-power planetary/detail ocular (e.g. Celestron Luminos 10mm or Plossl 6mm)
+                    best_oc = next((oc for oc in reversed(oculars) if oc["efl"] >= 6.0), oculars[-1])
+                    role = "High-Power Resolving"
+                else:
+                    # Mid-power DSO/cluster contrast
+                    mid_cands = [oc for oc in oculars if 12.0 <= oc["efl"] <= 30.0]
+                    best_oc = mid_cands[0] if mid_cands else oculars[len(oculars)//2]
+                    role = "Mid-Power Contrast"
+
+                entry["eyepiece"] = f"{best_oc['mag']:.0f}x ({best_oc['efl']:.0f}mm)"
+                entry["eyepiece_badge"] = f"{best_oc['name']} ({best_oc['mag']:.0f}x - {best_oc['tfov']:.2f}° FOV)"
+                entry["eyepiece_detail"] = f"{role}: {best_oc['mag']:.0f}x magnification with {best_oc['tfov']:.2f}° true sky coverage on your {self.optics['telescope']}."
 
             calc_list.append(entry)
 
@@ -3347,6 +3379,149 @@ class GoToDialog(QDialog):
 # MAIN APPLICATION WINDOW (Version 2.0 - Scientific Clean Layout)
 # ==============================================================================
 
+class SerialMonitorDialog(QDialog):
+    """Real-time interactive Serial Monitor displaying raw TX/RX communications with Arduino."""
+
+    def __init__(self, core: Any, night_mode: bool = False, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.core = core
+        self.night_mode = night_mode
+        self.setWindowTitle("Arduino Serial Monitor - Testing")
+        self.resize(720, 500)
+        self._history: List[str] = []
+        self._history_idx = -1
+        self._build_ui()
+
+        # Connect to core serial monitor listener
+        self._listener = self._on_raw_serial
+        if self.core:
+            self.core.register_serial_monitor(self._listener)
+
+    def closeEvent(self, event: Any) -> None:
+        if self.core:
+            self.core.unregister_serial_monitor(self._listener)
+        super().closeEvent(event)
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+
+        # Top Control Strip
+        top_bar = QHBoxLayout()
+        top_bar.setSpacing(10)
+
+        self.chk_filter_p = QCheckBox("Hide 'P' Polls")
+        self.chk_filter_p.setChecked(True)
+        self.chk_filter_p.setToolTip("Hides high-frequency 300ms position telemetry polls (P / P 0 0 ...) to reduce noise")
+        top_bar.addWidget(self.chk_filter_p)
+
+        self.chk_autoscroll = QCheckBox("Auto-Scroll")
+        self.chk_autoscroll.setChecked(True)
+        top_bar.addWidget(self.chk_autoscroll)
+
+        self.chk_pause = QCheckBox("Pause")
+        self.chk_pause.setToolTip("Temporarily freeze log view to inspect received frames")
+        top_bar.addWidget(self.chk_pause)
+
+        top_bar.addStretch()
+
+        btn_clear = QPushButton("Clear Monitor")
+        btn_clear.clicked.connect(self._clear_monitor)
+        top_bar.addWidget(btn_clear)
+
+        layout.addLayout(top_bar)
+
+        # High-Contrast Monospace Terminal
+        self.terminal = QTextEdit()
+        self.terminal.setReadOnly(True)
+        self.terminal.document().setMaximumBlockCount(4000)
+        self.terminal.setStyleSheet(
+            "background-color: #0A0D12; color: #DCE2EB; font-family: 'Consolas', 'JetBrains Mono', monospace; "
+            "font-size: 12px; border: 1px solid #2B3340; border-radius: 4px; padding: 6px;"
+            if not self.night_mode else
+            "background-color: #120000; color: #FFAAAA; font-family: 'Consolas', monospace; "
+            "font-size: 12px; border: 1px solid #550000; border-radius: 4px; padding: 6px;"
+        )
+        layout.addWidget(self.terminal, stretch=1)
+
+        # Bottom Command Entry Strip
+        cmd_box = QHBoxLayout()
+        cmd_box.setSpacing(8)
+
+        lbl_prompt = QLabel("Command:")
+        lbl_prompt.setStyleSheet("font-weight: 700; color: #8892A0;" if not self.night_mode else "font-weight: 700; color: #AA2222;")
+        cmd_box.addWidget(lbl_prompt)
+
+        self.txt_cmd = QLineEdit()
+        self.txt_cmd.setPlaceholderText("Enter firmware command (e.g. P, S, H, V 226, G 1000 500) and press Enter")
+        self.txt_cmd.returnPressed.connect(self._send_custom_command)
+        cmd_box.addWidget(self.txt_cmd, stretch=1)
+
+        btn_send = QPushButton("Send")
+        btn_send.setStyleSheet(
+            "QPushButton { background-color: #1E4472; border: 1px solid #336FA5; color: #FFFFFF; font-weight: 700; padding: 5px 16px; border-radius: 3px; } "
+            "QPushButton:hover { background-color: #285A96; }"
+        )
+        btn_send.clicked.connect(self._send_custom_command)
+        cmd_box.addWidget(btn_send)
+
+        layout.addLayout(cmd_box)
+
+    def _clear_monitor(self) -> None:
+        self.terminal.clear()
+
+    def _send_custom_command(self) -> None:
+        cmd = self.txt_cmd.text().strip()
+        if not cmd:
+            return
+        self.txt_cmd.clear()
+        self._history.append(cmd)
+        self._history_idx = len(self._history)
+
+        if not self.core or not self.core.link or not self.core.link.is_open:
+            self._append_html("<span style='color: #FF5252;'>[SYSTEM] Hardware link not connected!</span>")
+            return
+
+        # Execute command synchronously in short thread so UI does not stutter
+        def _exec():
+            try:
+                self.core.link.send(cmd)
+            except Exception as e:
+                self._append_html(f"<span style='color: #FF5252;'>[ERROR] {e}</span>")
+
+        threading.Thread(target=_exec, daemon=True, name="SerialMonitorSend").start()
+
+    def _on_raw_serial(self, direction: str, line: str) -> None:
+        if self.chk_pause.isChecked():
+            return
+
+        is_p = (line.strip() == "P") or (direction == "RX" and line.startswith("P "))
+        if is_p and self.chk_filter_p.isChecked():
+            return
+
+        now_str = dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        if direction == "TX":
+            color = "#00E5FF" if not self.night_mode else "#FF6666"
+            prefix = "&gt;&gt;"
+        elif "ERR" in line:
+            color = "#FF3D00" if not self.night_mode else "#FF2222"
+            prefix = "&lt;&lt;"
+        else:
+            color = "#00E676" if not self.night_mode else "#FF9999"
+            prefix = "&lt;&lt;"
+
+        html = f"<span style='color: #888888;'>[{now_str}]</span> <b style='color: {color};'>{direction} {prefix}</b> <span style='color: {color};'>{line}</span>"
+        QtCore.QMetaObject.invokeMethod(self, "_append_html", QtCore.Qt.ConnectionType.QueuedConnection, QtCore.Q_ARG(str, html))
+
+    @QtCore.pyqtSlot(str)
+    def _append_html(self, html: str) -> None:
+        self.terminal.append(html)
+        if self.chk_autoscroll.isChecked():
+            sb = self.terminal.verticalScrollBar()
+            sb.setValue(sb.maximum())
+
+
 class SolarSafetyBridge(QObject):
     """Thread-safe marshaling bridge to dispatch solar safety prompts to the Qt GUI thread."""
     request_prompt = pyqtSignal(float, object, object)
@@ -3530,6 +3705,13 @@ class AstroTelescopeWindow(QMainWindow):
         self.btn_weather.clicked.connect(self._refresh_weather_clicked)
         self.btn_weather.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
         status_box.addWidget(self.btn_weather)
+
+        # Stellarium Optics Badge
+        self.btn_optics = QPushButton("[OPTICS: LOADING...]")
+        self.btn_optics.setToolTip("Observer telescope & active eyepiece loaded from Stellarium Oculars profile (Click to open Tonight's Best)")
+        self.btn_optics.clicked.connect(self._open_sky_tour)
+        self.btn_optics.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
+        status_box.addWidget(self.btn_optics)
 
         layout.addLayout(status_box)
 
@@ -4040,6 +4222,11 @@ class AstroTelescopeWindow(QMainWindow):
         btn_clear.clicked.connect(self._clear_console)
         h.addWidget(btn_clear)
 
+        self.btn_serial_mon = QPushButton("Serial Monitor")
+        self.btn_serial_mon.setToolTip("Open real-time Arduino Serial Monitor (Testing)")
+        self.btn_serial_mon.clicked.connect(self._open_serial_monitor)
+        h.addWidget(self.btn_serial_mon)
+
         self.chk_autoscroll = QCheckBox("Auto-Scroll")
         self.chk_autoscroll.setChecked(True)
         h.addWidget(self.chk_autoscroll)
@@ -4301,18 +4488,13 @@ class AstroTelescopeWindow(QMainWindow):
             layout.setContentsMargins(20, 20, 20, 20)
             layout.setSpacing(14)
 
-            # High-visibility danger alert card
-            banner = QFrame()
-            banner.setStyleSheet(
-                "background-color: #3B1616; border: 1px solid #7D2626; border-radius: 4px; padding: 12px;"
-            )
-            b_lay = QVBoxLayout(banner)
-            b_lay.setContentsMargins(10, 10, 10, 10)
-            b_lay.setSpacing(8)
-
+            # Warning Header Banner (no outer red box, no border on description)
             lbl_danger_title = QLabel("CRITICAL EYE SAFETY WARNING")
-            lbl_danger_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #FF6B6B;")
-            b_lay.addWidget(lbl_danger_title)
+            lbl_danger_title.setStyleSheet(
+                "background-color: #4A1212; border: 1px solid #C62828; border-radius: 4px; "
+                "color: #FF6B6B; font-size: 14px; font-weight: 800; padding: 8px 14px;"
+            )
+            layout.addWidget(lbl_danger_title)
 
             lbl_danger_desc = QLabel(
                 f"You are about to point the telescope towards the SUN (angular separation: {sun_sep:.1f}°).\n\n"
@@ -4320,9 +4502,8 @@ class AstroTelescopeWindow(QMainWindow):
                 "or eyepiece causes INSTANT and PERMANENT BLINDNESS and irreparably damages camera sensors."
             )
             lbl_danger_desc.setWordWrap(True)
-            lbl_danger_desc.setStyleSheet("font-size: 12px; font-weight: 600; color: #FFFFFF;")
-            b_lay.addWidget(lbl_danger_desc)
-            layout.addWidget(banner)
+            lbl_danger_desc.setStyleSheet("font-size: 12px; font-weight: 600; color: #FFFFFF; border: none; background: transparent; padding: 4px 0px;")
+            layout.addWidget(lbl_danger_desc)
 
             lbl_instructions = QLabel(
                 "Before authorizing this GoTo slew, verify that a certified solar filter "
@@ -4330,20 +4511,25 @@ class AstroTelescopeWindow(QMainWindow):
                 "to the telescope aperture, and avoid looking directly along the optical line of sight."
             )
             lbl_instructions.setWordWrap(True)
-            lbl_instructions.setStyleSheet("font-size: 11px; color: #C8D1DC;")
+            lbl_instructions.setStyleSheet("font-size: 11px; color: #C8D1DC; border: none; background: transparent;")
             layout.addWidget(lbl_instructions)
 
             lbl_question = QLabel("Do you have a certified solar filter installed and wish to proceed?")
-            lbl_question.setStyleSheet("font-size: 12px; font-weight: 700; color: #FFE082;")
+            lbl_question.setStyleSheet("font-size: 12px; font-weight: 700; color: #FFE082; border: none; background: transparent;")
             layout.addWidget(lbl_question)
 
-            # Action buttons: Abort (Safe) is default
+            # Standard colored buttons: Abort Slew (Red) & Proceed with Solar Filter (Green)
             btn_box = QHBoxLayout()
             btn_box.setSpacing(12)
             btn_box.addStretch()
 
-            btn_abort = QPushButton("Abort Slew (Safe)")
-            btn_abort.setProperty("class", "stop-btn")
+            btn_abort = QPushButton("Abort Slew")
+            btn_abort.setStyleSheet(
+                "QPushButton { background-color: #D32F2F; border: 1px solid #B71C1C; color: #FFFFFF; "
+                "font-size: 12px; font-weight: 700; padding: 8px 18px; border-radius: 4px; } "
+                "QPushButton:hover { background-color: #E53935; } "
+                "QPushButton:pressed { background-color: #B71C1C; }"
+            )
             btn_abort.setDefault(True)
             btn_abort.setFocus()
             btn_abort.clicked.connect(dlg.reject)
@@ -4351,8 +4537,10 @@ class AstroTelescopeWindow(QMainWindow):
 
             btn_proceed = QPushButton("Proceed with Solar Filter")
             btn_proceed.setStyleSheet(
-                "background-color: #855C26; border: 1px solid #A37130; color: #FFFFFF; "
-                "font-size: 12px; font-weight: 700; padding: 7px 16px; border-radius: 3px;"
+                "QPushButton { background-color: #2E7D32; border: 1px solid #1B5E20; color: #FFFFFF; "
+                "font-size: 12px; font-weight: 700; padding: 8px 18px; border-radius: 4px; } "
+                "QPushButton:hover { background-color: #388E3C; } "
+                "QPushButton:pressed { background-color: #1B5E20; }"
             )
             btn_proceed.clicked.connect(dlg.accept)
             btn_box.addWidget(btn_proceed)
@@ -4525,6 +4713,13 @@ class AstroTelescopeWindow(QMainWindow):
             self._console_history.clear()
         self.console_text.clear()
 
+    def _open_serial_monitor(self) -> None:
+        if not hasattr(self, "serial_monitor_dlg") or self.serial_monitor_dlg is None:
+            self.serial_monitor_dlg = SerialMonitorDialog(self.core, night_mode=self.night_mode, parent=self)
+        self.serial_monitor_dlg.show()
+        self.serial_monitor_dlg.raise_()
+        self.serial_monitor_dlg.activateWindow()
+
     # --------------------------------------------------------------------------
     # Serial Link Management
     # --------------------------------------------------------------------------
@@ -4634,10 +4829,10 @@ class AstroTelescopeWindow(QMainWindow):
                 self.weather_service.fetch_async()
         self._prev_stellarium_connected = stel_conn
 
-        # Tracking state with selected rate
+        # Tracking state
         cur_rate = getattr(self.core, "tracking_rate", "Sidereal").upper()
         if self.core.tracking_enabled:
-            self.btn_track.setText(f"Tracking: ON ({cur_rate})")
+            self.btn_track.setText("Tracking: ON")
             self.btn_track.setStyleSheet("background-color: #5C0B0B; border-color: #801010; color: #FFAAAA; font-weight: 700;" if self.night_mode else "background-color: #1F3F28; border-color: #31683E; color: #C8E6C9; font-weight: 700;")
         else:
             self.btn_track.setText("Tracking: OFF")
@@ -4653,6 +4848,18 @@ class AstroTelescopeWindow(QMainWindow):
             status = "STRAIN" if abs(wrap_turns) > 0.4 else "OK"
             self.lbl_cable_wrap.setText(f"Cable: {wrap_turns:+.2f} turns [{status}]")
             self.lbl_cable_wrap.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {color};")
+
+        # Refresh optics badge from Stellarium Oculars profile
+        if hasattr(self, "btn_optics"):
+            if not hasattr(self, "_cached_optics"):
+                self._cached_optics = load_stellarium_optics() if load_stellarium_optics else {}
+            if self._cached_optics.get("found"):
+                t_n = self._cached_optics['telescope']
+                o_n = self._cached_optics['ocular'].split('(')[0].strip()
+                mag = self._cached_optics['mag']
+                self.btn_optics.setText(f"[{t_n} | {o_n} ({mag:.0f}x)]")
+            else:
+                self.btn_optics.setText("[OPTICS: STELLARIUM]")
 
         # 3. Microsecond-Accurate Astronomy Clocks
         cur_t = self.core.get_time()

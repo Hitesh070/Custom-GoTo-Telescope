@@ -433,6 +433,28 @@ class LinkBase:
         self.reply_queue: queue.Queue[str] = queue.Queue()
         self.is_open: bool = False
         self.send_lock: threading.Lock = threading.Lock()
+        self.core: Optional[Any] = None
+        self.raw_io_callbacks: List[Any] = []
+
+    def register_raw_io_callback(self, cb: Any) -> None:
+        if cb not in self.raw_io_callbacks:
+            self.raw_io_callbacks.append(cb)
+
+    def unregister_raw_io_callback(self, cb: Any) -> None:
+        if cb in self.raw_io_callbacks:
+            self.raw_io_callbacks.remove(cb)
+
+    def notify_raw_io(self, direction: str, line: str) -> None:
+        for cb in list(self.raw_io_callbacks):
+            try:
+                cb(direction, line)
+            except Exception:
+                pass
+        if getattr(self, "core", None) and hasattr(self.core, "notify_serial_monitor"):
+            try:
+                self.core.notify_serial_monitor(direction, line)
+            except Exception:
+                pass
 
     def open(self) -> bool:
         raise NotImplementedError
@@ -539,6 +561,7 @@ class SerialLink(LinkBase):
 
     def _handle_incoming_line(self, line: str) -> None:
         """Categorizes incoming lines into telemetry, command replies, or async notifications."""
+        self.notify_raw_io("RX", line)
         if line.startswith("P "):
             parts = line.split()
             if len(parts) == 6:
@@ -603,6 +626,7 @@ class SerialLink(LinkBase):
                 self._waiting_for_p = True
 
             try:
+                self.notify_raw_io("TX", cmd)
                 try:
                     self.ser.write((cmd + "\n").encode('ascii'))
                 except Exception as e:
@@ -763,6 +787,12 @@ class SimLink(LinkBase):
             time.sleep(0.1)
 
     def send(self, cmd: str) -> str:
+        self.notify_raw_io("TX", cmd)
+        reply = self._do_send(cmd)
+        self.notify_raw_io("RX", reply)
+        return reply
+
+    def _do_send(self, cmd: str) -> str:
         """Processes protocol command and returns simulated firmware reply."""
         if not self.is_open:
             return "ERR NOT_CONNECTED"
@@ -1285,6 +1315,85 @@ class PointingLogger:
                 logging.error(f"Error appending to pointing log: {e}")
 
 # ==============================================================================
+# STELLARIUM OCULARS & OPTICS LOADER
+# ==============================================================================
+
+def load_stellarium_optics() -> Dict[str, Any]:
+    """Reads telescope and eyepiece configuration directly from Stellarium's Oculars plugin (ocular.ini)."""
+    import configparser
+
+    appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+    ini_path = os.path.join(appdata, 'Stellarium', 'modules', 'Oculars', 'ocular.ini')
+    if not os.path.exists(ini_path):
+        return {
+            'found': False,
+            'telescope': 'Standard Refractor',
+            'fl': 700.0,
+            'dia': 60.0,
+            'f_ratio': 11.7,
+            'ocular': 'Standard 25mm',
+            'efl': 25.0,
+            'afov': 50.0,
+            'mag': 28.0,
+            'tfov': 1.78,
+            'all_oculars': []
+        }
+
+    try:
+        cp = configparser.ConfigParser(strict=False)
+        cp.read(ini_path, encoding='utf-8')
+
+        t_idx = int(cp.get('General', 'telescope_index', fallback='0'))
+        o_idx = int(cp.get('General', 'ocular_index', fallback='0'))
+
+        t_name = cp.get('telescope', f'{t_idx}\\name', fallback='Generic Telescope')
+        t_fl = float(cp.get('telescope', f'{t_idx}\\focallength', fallback='700'))
+        t_dia = float(cp.get('telescope', f'{t_idx}\\diameter', fallback='60'))
+        f_ratio = t_fl / t_dia if t_dia > 0 else 0.0
+
+        o_name = cp.get('ocular', f'{o_idx}\\name', fallback='Standard Eyepiece')
+        o_efl = float(cp.get('ocular', f'{o_idx}\\efl', fallback='25'))
+        o_afov = float(cp.get('ocular', f'{o_idx}\\afov', fallback='50'))
+        mag = t_fl / o_efl if o_efl > 0 else 1.0
+        tfov = o_afov / mag if mag > 0 else 0.0
+
+        all_oculars = []
+        for i in range(int(cp.get('General', 'ocular_count', fallback='0'))):
+            name = cp.get('ocular', f'{i}\\name', fallback='')
+            is_bino = cp.get('ocular', f'{i}\\binoculars', fallback='false').lower() == 'true'
+            if name and not is_bino:
+                efl = float(cp.get('ocular', f'{i}\\efl', fallback='0'))
+                afov = float(cp.get('ocular', f'{i}\\afov', fallback='0'))
+                o_mag = t_fl / efl if efl > 0 else 1.0
+                o_tfov = afov / o_mag if o_mag > 0 else 0.0
+                all_oculars.append({
+                    'index': i,
+                    'name': name,
+                    'efl': efl,
+                    'afov': afov,
+                    'mag': o_mag,
+                    'tfov': o_tfov
+                })
+
+        all_oculars.sort(key=lambda x: x['efl'], reverse=True)
+
+        return {
+            'found': True,
+            'telescope': t_name,
+            'fl': t_fl,
+            'dia': t_dia,
+            'f_ratio': f_ratio,
+            'ocular': o_name,
+            'efl': o_efl,
+            'afov': o_afov,
+            'mag': mag,
+            'tfov': tfov,
+            'all_oculars': all_oculars
+        }
+    except Exception as e:
+        return {'found': False, 'error': str(e)}
+
+# ==============================================================================
 # BRIDGE CORE LOGIC (Section 8.5)
 # ==============================================================================
 
@@ -1328,12 +1437,36 @@ class BridgeCore:
         self.solar_filter_confirmed: bool = bool(self.config.get("solar_filter_installed", False))
         self.solar_warning_callback: Optional[Callable[[float], bool]] = None
 
+        # Serial Monitor listener callbacks
+        self.serial_monitor_callbacks: List[Any] = []
+        if self.link:
+            self.link.core = self
+
         # Event queue for GUI / logging
         self.event_queue: queue.Queue[Tuple[str, str]] = queue.Queue()
 
         # Tracking loop thread
         self._stop_event = threading.Event()
         self._tracking_thread: Optional[threading.Thread] = None
+
+    def register_serial_monitor(self, cb: Any) -> None:
+        if cb not in self.serial_monitor_callbacks:
+            self.serial_monitor_callbacks.append(cb)
+        if getattr(self, "link", None):
+            self.link.register_raw_io_callback(cb)
+
+    def unregister_serial_monitor(self, cb: Any) -> None:
+        if cb in self.serial_monitor_callbacks:
+            self.serial_monitor_callbacks.remove(cb)
+        if getattr(self, "link", None):
+            self.link.unregister_raw_io_callback(cb)
+
+    def notify_serial_monitor(self, direction: str, line: str) -> None:
+        for cb in list(self.serial_monitor_callbacks):
+            try:
+                cb(direction, line)
+            except Exception:
+                pass
 
     def get_time(self) -> dt.datetime:
         """Returns current naive UTC datetime."""
