@@ -1,6 +1,6 @@
-# Custom GoTo Telescope Mount v3.2
+# Custom GoTo Telescope Mount v4.0
 
-> Professional-grade motorized 3-axis Alt-Azimuth telescope GoTo mount and Stellarium desktop integration bridge for 60mm F/2.8 refractors, powered by Arduino Uno, 28BYJ-48 stepper motors, and ULN2003 drivers.
+> Professional-grade motorized 3-axis Alt-Azimuth telescope GoTo mount and Stellarium desktop integration bridge for 60mm F/2.8 refractors, powered by Arduino Uno, 28BYJ-48 stepper motors, and ULN2003 drivers. Built with a modern Windows 11 desktop architecture in PyQt6.
 
 ---
 
@@ -8,20 +8,20 @@
 
 ```mermaid
 flowchart TD
-    subgraph PC["Host Desktop (Windows)"]
+    subgraph PC["Host Desktop (Windows 11)"]
         S["Stellarium Astronomy Software"]
-        subgraph BridgeApp["Custom GoTo v3.2 Controller (PyQt6 / Python 3.12)"]
+        subgraph BridgeApp["Custom GoTo v4.0 Desktop Application (PyQt6)"]
             ST_SRV["Stellarium TCP Server (Port 10001)"]
             HTTP_CLI["Stellarium HTTP Follower (Port 8090)"]
             WX_SVC["Live Cloud & Meteorological Telemetry (Open-Meteo)"]
             CORE["AstroTelescopeCore Engine\n(Astrometry, Meeus Ephemeris, Kinematics)"]
-            GUI["Modern Desktop Interface\n(Radar, Sky Tour, Pure-Red Night Vision)"]
+            GUI["Modern Desktop Interface (src/ui/)\n(Radar, Tonight's Tour, Focus V-Curve, Pure-Red Night Vision)"]
         end
     end
 
     subgraph Hardware["Mount Electronics"]
         direction TB
-        UNO["Arduino Uno (ATmega328P)\n[Custom Microstep Firmware]"]
+        UNO["Arduino Uno (ATmega328P)\n[firmware/telescope_firmware/]"]
         ULN_AZ["ULN2003 Driver (Azimuth)"]
         ULN_ALT["ULN2003 Driver (Altitude)"]
         ULN_FOC["ULN2003 Driver (Focuser)"]
@@ -44,6 +44,47 @@ flowchart TD
 
 ---
 
+## Repository Structure
+
+```text
+Custom-GoTo-Telescope/
+├── assets/                     # Application branding & Black Hole icon
+│   ├── black_hole_icon.ico
+│   └── black_hole_icon.png
+├── docs/                       # Comprehensive documentation & build guide
+│   └── GoTo_Telescope_v2.1_Build_Guide.docx
+├── firmware/                   # Arduino Uno ATmega328P firmware
+│   └── telescope_firmware/
+│       └── telescope_firmware.ino
+├── scripts/                    # Icon generation and utility scripts
+│   └── generate_icon.py
+├── src/                        # Modular application codebase (v4.0)
+│   ├── core/                   # Astrometry, catalog & weather services
+│   │   ├── astrometry.py
+│   │   ├── catalog.py
+│   │   └── weather_service.py
+│   └── ui/                     # Themes, custom widgets, dialogs, main window
+│       ├── theme.py
+│       ├── app.py
+│       ├── main_window.py
+│       ├── widgets/            # Polar sky radar & focus curve
+│       └── dialogs/            # GoTo, Tour, AutoFocus, Serial Monitor, Settings, Help
+├── tests/                      # Automated unit & integration verification suite
+│   ├── test_serial_monitor_and_optics.py
+│   ├── test_tonight_best_alignment.py
+│   └── test_verification_suite.py
+├── .gitignore                  # Git ignore rules
+├── build_exe.py                # Standalone Windows PyInstaller packaging script
+├── README.md                   # Project documentation & architecture
+├── requirements.txt            # Python dependencies
+├── run_app.bat                 # 1-click Windows desktop launcher
+├── telescope_bridge.py         # Hardware communications & Stellarium bridge engine
+├── telescope_config.example.json # Configuration template
+└── telescope_ui_qt.py          # Unified desktop UI entrypoint
+```
+
+---
+
 ## Hardware & Wiring
 
 ### Arduino Pinout
@@ -54,54 +95,48 @@ flowchart TD
 
 ---
 
-## Custom GoTo v3.2 Features & Enhancements
+## Key Features in v4.0
 
-Version 3.2 delivers refined ergonomics, true night vision preservation, real-time mount tracking, and live weather telemetry:
-
-* **True Pure-Red Dark-Sky Night Vision Mode (Ctrl+N):**
-  * 100% dark-adapted rhodopsin preservation across every single element: Data Rate label, Tracking Rate selector, comboboxes, and Activity Console log messages all strictly enforce pure crimson red (`#FF4D4D`, `#AA2222`, `#7A1010`) with zero white or daylight leakage.
-  * Instant dynamic re-theming: toggling Night Vision immediately re-renders all existing console history to pure red.
-* **Unified Status Deck Indicators:**
-  * Clean, consistent pill badges with bold white typography (`#FFFFFF`) on solid status-colored backgrounds:
-    * **Arduino:** `ARDUINO: SIMULATED` (Blue `#1E4472`), `ARDUINO: CONNECTED` (Green `#1E7E34`), `ARDUINO: DISCONNECTED` (Red `#8A1B1B`).
-    * **Stellarium:** `STELLARIUM: CONNECTED` (Green `#1E7E34`), `STELLARIUM: LISTENING` (Red `#8A1B1B`).
-    * **Weather:** `[BADGE % CLOUD | TEMP]` (Grey `#272C36`, matching Settings).
-* **Automatic Coordinate & Meteorological Synchronization:**
-  * Automatic location sync from Stellarium (Port 8090) triggered instantly whenever Stellarium connects.
-  * Live Open-Meteo weather telemetry automatically initializes at application startup.
-* **Smart Tracking Display:**
-  * Tracking toggle button and telemetry table dynamically display the active rate type (`Tracking: ON (SIDEREAL)`, `Tracking: ON (LUNAR)`, `Tracking: ON (SOLAR)`, `Tracking: ON (KING)`).
-* **Tonight's Best Window Enhancements:**
-  * **20 Hz High-Speed Mount Readout:** Dedicated 50ms timer delivers real-time `Mount: Az ..., Alt ...` updates in an enlarged 15px bold font.
-  * **Clean Atmospheric Metrics Deck:** Direct, structured telemetry row displaying Sky Condition, Seeing Transparency, Temperature, Relative Humidity, Wind Speed, and Visibility without verbose prose.
-  * Cleaned category tabs: "Tonight's Visible" filter.
-* **Refined Console Deck:** Ergonomically reordered controls: `[Sync Location]  [Clear Console]  [Auto-Scroll]`.
-* **Solar Observation Safety Interlock:** High-visibility white text for certified solar filter confirmation and clean angular separation telemetry.
-* **Standalone Windows Executable:** Built single-file `dist/AstroGoTo.exe` with black hole application icon.
-* **Enlarged Polar Celestial Radar:** Real-time visual celestial sphere displaying physical telescope pointing, active target reticle, Sun danger keep-out zone, and compass bearings.
-* **Standalone Windows Executable:** Single-file `dist/AstroGoTo.exe` with embedded high-resolution black hole icon and assets.
+* **Modern Windows 11 Desktop UI:**
+  * Clean, responsive layered card architecture in PyQt6 with high-DPI scaling and Windows AppUserModelID registration.
+  * Modern deep obsidian dark theme (`#0d1117`) and astronomical **pure-red dark-sky night vision** (`#ff0033` on `#000000`) preserving human retinal dark adaptation.
+* **Vector Polar Sky Radar:**
+  * Hardware-accelerated QPainter polar projection showing mount reticle, active target reticle, Sun danger keep-out buffer, and cardinal compass bearings.
+* **Tonight's Best Celestial Tour:**
+  * Curated database of planets, Messier objects, Caldwell targets, and bright stars with real-time altitude filtering, ephemeris calculations, and 1-click slew.
+* **Motorized AutoFocus & V-Curve:**
+  * Fine/medium/coarse step jogging, absolute step GoTo, zero position calibration, and automated parabolic V-curve focus routine.
+* **Real-Time Meteorological Telemetry:**
+  * Live Open-Meteo cloud cover %, temperature, humidity, wind, and seeing quality updates directly in the header deck.
+* **Safety Protocols:**
+  * Mandatory solar exclusion safety interlock preventing slews within unsafe angular proximity to the Sun without physical filter verification.
+  * Cable anti-wrap tracking with 1-click unwind routine.
+* **Bidirectional Serial Monitor:**
+  * Raw ASCII and HEX packet stream inspector with custom command terminal.
+* **Standalone Windows Binary:**
+  * Single-file executable [`dist/AstroGoTo.exe`](dist/AstroGoTo.exe) compiled with PyInstaller, containing embedded black hole application icon.
 
 ---
 
 ## Getting Started
 
 ### 1. Arduino Firmware
-1. Open [`telescope_firmware.ino`](telescope_firmware.ino) in the Arduino IDE.
-2. Install the **AccelStepper** library (via Library Manager).
-3. Connect the Arduino Uno over USB, select the COM port, and click **Upload**.
+1. Open [`firmware/telescope_firmware/telescope_firmware.ino`](firmware/telescope_firmware/telescope_firmware.ino) in the Arduino IDE.
+2. Install the **AccelStepper** library (via Tools -> Manage Libraries).
+3. Connect the Arduino Uno over USB, select the board and COM port, and click **Upload**.
 
-### 2. Running AstroGoTo v3.1
+### 2. Running Custom GoTo Desktop
 Download the standalone executable from [GitHub Releases](https://github.com/Hitesh070/Custom-GoTo-Telescope/releases), or run from source:
 ```bash
+pip install -r requirements.txt
 python telescope_ui_qt.py
 ```
 *(Or double-click `run_app.bat` or launch `dist/AstroGoTo.exe`)*.
 
-To run the bridge in headless mode (console-only with Tkinter fallback via `--tk`):
+Add `--simulate` to test the mount with virtual motors and simulated telemetry without physical hardware:
 ```bash
-python telescope_bridge.py
+python telescope_ui_qt.py --simulate
 ```
-*(Add `--simulate` to test without physical hardware attached; run `--selftest` to execute the automated verification suite).*
 
 ### 3. Stellarium Setup
 1. Open Stellarium and go to **Configuration (`F2`) -> Plugins -> Telescope Control -> Enable**.
@@ -109,14 +144,15 @@ python telescope_bridge.py
    - Telescope controlled by: **External software or a remote computer**
    - Host: `127.0.0.1`
    - Port: `10001`
-3. Click **Connect**. Your telescope reticle will appear on screen!
+3. Click **Connect**. The telescope reticle will appear on screen!
 4. Select any celestial object and press **Ctrl + 1** to slew.
 
 ---
 
-## Verification Suite
-The codebase includes a comprehensive 17-point verification suite:
+## Automated Verification Suite
+
+Run the full automated test suite covering astrometry, theme propagation, Stellarium synchronization, and kinematics:
 ```bash
-python telescope_bridge.py --selftest
+python -m unittest discover tests
 ```
-All 17 astrometric and kinematics tests pass cleanly out of the box.
+All unit tests pass out of the box.

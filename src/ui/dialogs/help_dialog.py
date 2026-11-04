@@ -112,7 +112,7 @@ class HelpGuideDialog(QDialog):
         <ol>
           <li><b>Powering Motors:</b> Never power the ULN2003 boards from the Arduino's 5V pin. Connect an external 5V (2A or higher) USB phone charger to the ULN2003 power rails. Tie external Ground and Arduino Ground together.</li>
           <li><b>Mechanical Balance:</b> The 28BYJ-48 stepper has low holding torque (~0.034 N·m). Ensure the telescope tube is balanced at its pivot point so it remains stationary when the motors are unpowered.</li>
-          <li><b>Upload Firmware:</b> Open <code>telescope_firmware.ino</code> in Arduino IDE, install the <i>AccelStepper</i> library, and flash to your Uno.</li>
+          <li><b>Upload Firmware:</b> Open <code>firmware/telescope_firmware/telescope_firmware.ino</code> in Arduino IDE, install the <i>AccelStepper</i> library, and flash to your Uno.</li>
         </ol>
 
         <h4>Step B: Operating the Bridge & Software</h4>

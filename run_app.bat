@@ -1,4 +1,4 @@
 @echo off
-title AstroGoTo v2.0 Controller
-echo Launching AstroGoTo v2.0...
+title Custom GoTo v4.0 Controller
+echo Launching Custom GoTo v4.0...
 python telescope_ui_qt.py %*
