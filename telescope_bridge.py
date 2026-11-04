@@ -928,6 +928,11 @@ class SimLink(LinkBase):
                 if len(parts) != 2:
                     return "ERR PARSE"
                 axis = parts[1]
+                if axis == "F":
+                    self.foc_pos = 0.0
+                    self.foc_target = 0.0
+                    self._update_telemetry()
+                    return "OK"
                 if axis not in ("ALT", "AZ"):
                     return "ERR PARSE"
                 if self.homing_axis is not None:
@@ -1505,6 +1510,9 @@ class BridgeCore:
         self.tracking_total_steps_az: int = 0
         self.tracking_total_steps_alt: int = 0
         self.tracking_initial_steps: Optional[Tuple[int, int]] = None
+
+        # Motorized focus target tracking
+        self._target_foc_step: Optional[int] = None
 
         # Solar observation confirmation state & safety callback for GUI confirmation
         self.solar_filter_confirmed: bool = bool(self.config.get("solar_filter_installed", False))
@@ -2265,6 +2273,12 @@ class BridgeCore:
         """Moves focus motor by an explicit step delta."""
         if not self.link or not self.link.is_open:
             return False
+        if delta == 0:
+            return True
+        if self._target_foc_step is not None:
+            self._target_foc_step += delta
+        elif self.link.latest_telemetry.valid:
+            self._target_foc_step = self.link.latest_telemetry.foc_steps + delta
         effective_delta = delta * int(self.config.get("sign_focus", 1))
         reply = self.link.send(f"F {effective_delta}")
         if reply == "OK":
@@ -2275,12 +2289,59 @@ class BridgeCore:
             return False
 
     def set_focus_target(self, target_step: int) -> bool:
-        """Slews focuser directly to target step position."""
+        """Slews focuser directly to target step position with in-flight anti-drift tracking."""
         if not self.link or not self.link.is_open or not self.link.latest_telemetry.valid:
             return False
-        cur_foc = self.link.latest_telemetry.foc_steps
-        delta = target_step - cur_foc
+        telem = self.link.latest_telemetry
+        if telem.moving and self._target_foc_step is not None:
+            cur_ref = self._target_foc_step
+        else:
+            cur_ref = telem.foc_steps
+        delta = target_step - cur_ref
+        if delta == 0:
+            return True
         return self.move_focus_steps(delta)
+
+    def wait_focus_settled(self, target_step: Optional[int] = None, timeout: float = 4.0, tolerance: int = 2) -> bool:
+        """Blocks until focus motor has finished moving and settled."""
+        if not self.link or not self.link.is_open:
+            return False
+        t0 = time.time()
+        time.sleep(0.04)
+        while (time.time() - t0) < timeout:
+            telem = self.link.latest_telemetry
+            if not telem.valid:
+                time.sleep(0.03)
+                continue
+            is_done = (telem.moving == 0)
+            if target_step is not None:
+                near_target = abs(telem.foc_steps - target_step) <= tolerance
+                if is_done and near_target:
+                    time.sleep(0.05)
+                    return True
+            else:
+                if is_done:
+                    time.sleep(0.05)
+                    return True
+            time.sleep(0.03)
+        return False
+
+    def zero_focus(self) -> bool:
+        """Resets motorized focus step counter to 0 on hardware and simulator."""
+        self._target_foc_step = 0
+        if not self.link or not self.link.is_open:
+            return False
+        if hasattr(self.link, "foc_pos"):
+            self.link.foc_pos = 0.0
+            self.link.foc_target = 0.0
+            if hasattr(self.link, "_update_telemetry"):
+                self.link._update_telemetry()
+        try:
+            self.link.send("Z F")
+        except Exception:
+            pass
+        self.on_event("INFO", "Focus position zeroed (0 steps)")
+        return True
 
     def zero_position(self) -> None:
         """Sets current physical orientation as logical (0, 0)."""

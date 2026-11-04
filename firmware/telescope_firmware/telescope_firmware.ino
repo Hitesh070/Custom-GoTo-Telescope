@@ -457,6 +457,12 @@ void processCommand(char* line) {
         return;
       }
 
+      if (strcmp(axisToken, "F") == 0) {
+        focStepper.setCurrentPosition(0);
+        Serial.println(F("OK"));
+        return;
+      }
+
       HomingAxis reqAxis = HOME_NONE;
       if (strcmp(axisToken, "ALT") == 0) {
         reqAxis = HOME_ALT;

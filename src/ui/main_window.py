@@ -1414,15 +1414,16 @@ class AstroTelescopeWindow(QMainWindow):
             self.core.set_focus_target(target)
 
     def _open_autofocus_dialog(self) -> None:
-        dlg = AutoFocusDialog(self, self.core)
-        dlg.exec()
+        dlg = AutoFocusDialog(self, self.core, night_mode=self.night_mode)
+        if dlg.exec():
+            if dlg.best_step is not None and hasattr(self, "spin_foc_direct"):
+                self.spin_foc_direct.setValue(dlg.best_step)
 
     def _zero_focus(self) -> None:
-        if self.core and self.core.link and self.core.link.is_open:
-            if hasattr(self.core.link, "foc_pos"):
-                self.core.link.foc_pos = 0.0
-                self.core.link.foc_target = 0.0
-            self.core.on_event("INFO", "Focus position zeroed (0 steps)")
+        if self.core:
+            self.core.zero_focus()
+            if hasattr(self, "spin_foc_direct"):
+                self.spin_foc_direct.setValue(0)
 
     def _confirm_zero(self) -> None:
         res = QMessageBox.question(

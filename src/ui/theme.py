@@ -244,6 +244,42 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
     border: 1px solid #58a6ff;
 }
 
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    background-color: #161b22;
+    border-left: 1px solid #30363d;
+    border-bottom: 1px solid #30363d;
+    border-top-right-radius: 5px;
+    width: 16px;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background-color: #161b22;
+    border-left: 1px solid #30363d;
+    border-bottom-right-radius: 5px;
+    width: 16px;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #21262d;
+}
+
+QProgressBar {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    text-align: center;
+    color: #e6edf3;
+    font-weight: 600;
+    font-size: 11px;
+    min-height: 16px;
+}
+
+QProgressBar::chunk {
+    background-color: #1f6feb;
+    border-radius: 5px;
+}
+
 QComboBox {
     background-color: #161b22;
     color: #c9d1d9;
@@ -603,6 +639,42 @@ QLineEdit, QSpinBox, QDoubleSpinBox {
     border-radius: 6px;
     padding: 5px 8px;
     selection-background-color: #660010;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    background-color: #1a0003;
+    border-left: 1px solid #4a000a;
+    border-bottom: 1px solid #4a000a;
+    border-top-right-radius: 5px;
+    width: 16px;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background-color: #1a0003;
+    border-left: 1px solid #4a000a;
+    border-bottom-right-radius: 5px;
+    width: 16px;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #330006;
+}
+
+QProgressBar {
+    background-color: #1a0003;
+    border: 1px solid #55000a;
+    border-radius: 6px;
+    text-align: center;
+    color: #ff3344;
+    font-weight: 600;
+    font-size: 11px;
+    min-height: 16px;
+}
+
+QProgressBar::chunk {
+    background-color: #880011;
+    border-radius: 5px;
 }
 
 QComboBox {
