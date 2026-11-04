@@ -16,6 +16,7 @@
   <img src="https://img.shields.io/badge/Python-3.12-38bdf8?style=for-the-badge&logo=python" alt="Python 3.12" />
   <img src="https://img.shields.io/badge/Hardware-Arduino%20Uno-00979d?style=for-the-badge&logo=arduino" alt="Arduino Uno" />
   <img src="https://img.shields.io/badge/Night%20Vision-Pure%20Red%20OLED-ef4444?style=for-the-badge" alt="Night Vision" />
+  <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License MIT" />
 </p>
 
 ---
@@ -116,6 +117,7 @@ Custom-GoTo-Telescope/
 │   ├── test_global_shortcuts.py
 │   └── test_verification_suite.py
 ├── .gitignore                  # Git ignore rules
+├── LICENSE                     # MIT License File
 ├── build_exe.py                # Standalone Windows PyInstaller packaging script
 ├── README.md                   # Project documentation & architecture
 ├── requirements.txt            # Python dependencies
@@ -218,3 +220,11 @@ Run the full automated test suite covering astrometry, night vision propagation,
 python -m unittest discover tests
 ```
 All unit tests pass cleanly out of the box.
+
+---
+
+## Author & License
+
+- **Developer**: Hitesh V S
+- **GitHub**: [@Hitesh070](https://github.com/Hitesh070)
+- **License**: Released under the [MIT License](LICENSE).
