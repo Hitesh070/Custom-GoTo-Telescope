@@ -9,14 +9,17 @@ from typing import Optional, Dict, Any
 from PyQt6 import QtWidgets, QtCore
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QLineEdit, QComboBox, QRadioButton, QButtonGroup, QMessageBox, QWidget
+    QLineEdit, QComboBox, QRadioButton, QButtonGroup, QMessageBox, QWidget,
+    QFormLayout, QDoubleSpinBox, QFrame
 )
 from src.core.astrometry import deg_to_hms, deg_to_dms
 from src.ui.theme import SCIENTIFIC_STYLE, NIGHT_VISION_STYLE
 try:
-    from telescope_bridge import radec_to_altaz, altaz_to_radec
+    from telescope_bridge import (
+        radec_to_altaz, altaz_to_radec, sun_radec, separation_deg, precess_j2000_to_date
+    )
 except ImportError:
-    radec_to_altaz = altaz_to_radec = None
+    radec_to_altaz = altaz_to_radec = sun_radec = separation_deg = precess_j2000_to_date = None
 
 class GoToDialog(QDialog):
     """Allows selecting a celestial target or entering custom RA/Dec for GoTo slewing at constant velocity."""
@@ -52,6 +55,10 @@ class GoToDialog(QDialog):
         self.resize(480, 360)
         self.setStyleSheet(NIGHT_VISION_STYLE if night_mode else SCIENTIFIC_STYLE)
         self._build_ui()
+
+    def set_night_mode(self, enabled: bool) -> None:
+        self.night_mode = enabled
+        self.setStyleSheet(NIGHT_VISION_STYLE if enabled else SCIENTIFIC_STYLE)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)

@@ -33,6 +33,12 @@ class AutoFocusDialog(QDialog):
 
         self._build_ui()
 
+    def set_night_mode(self, enabled: bool) -> None:
+        self.night_mode = enabled
+        self.setStyleSheet(NIGHT_VISION_STYLE if enabled else SCIENTIFIC_STYLE)
+        if hasattr(self, 'curve_widget') and self.curve_widget:
+            self.curve_widget.set_night_mode(enabled)
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)

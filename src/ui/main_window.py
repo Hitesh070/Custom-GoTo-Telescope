@@ -83,6 +83,97 @@ class SolarSafetyBridge(QObject):
     request_prompt = pyqtSignal(float, object, object)
 
 
+
+class GlobalShortcutEventFilter(QObject):
+    """Application-wide hotkey filter capturing shortcuts across every window and dialog."""
+
+    def __init__(self, main_win: 'AstroTelescopeWindow'):
+        super().__init__()
+        self.main_win = main_win
+
+    def eventFilter(self, watched: QObject, event: QtCore.QEvent) -> bool:
+        if event.type() == QtCore.QEvent.Type.KeyPress:
+            key = event.key()
+            mods = event.modifiers()
+            ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            alt = bool(mods & Qt.KeyboardModifier.AltModifier)
+
+            focus_w = QApplication.focusWidget()
+            is_text_entry = isinstance(focus_w, (QLineEdit, QTextEdit, QtWidgets.QPlainTextEdit))
+            is_input_widget = is_text_entry or isinstance(focus_w, (QComboBox, QSpinBox, QDoubleSpinBox))
+
+            # 1. Toggle Night Vision (Alt+N or Ctrl+N) - active in ANY window or dialog
+            if (alt or ctrl) and key == Qt.Key.Key_N:
+                self.main_win.toggle_night_mode()
+                return True
+
+            # 2. Emergency Stop (Escape always; Space when not typing text) - active in ANY window
+            if key == Qt.Key.Key_Escape:
+                self.main_win._emergency_stop()
+                return True
+            if key == Qt.Key.Key_Space and not is_text_entry:
+                self.main_win._emergency_stop()
+                return True
+
+            # 3. Ctrl+T: Tonight's Best Tour - active in ANY window
+            if ctrl and key == Qt.Key.Key_T:
+                self.main_win._open_sky_tour()
+                return True
+
+            # 4. Ctrl+G: GoTo Coordinates Dialog - active in ANY window
+            if ctrl and key == Qt.Key.Key_G:
+                self.main_win._open_goto_dialog()
+                return True
+
+            # 5. Ctrl+M: Serial Monitor - active in ANY window
+            if ctrl and key == Qt.Key.Key_M:
+                self.main_win._open_serial_monitor()
+                return True
+
+            # 6. Ctrl+S: Settings Dialog - active in ANY window
+            if ctrl and key == Qt.Key.Key_S:
+                self.main_win._open_settings()
+                return True
+
+            # 7. F1 or Ctrl+H: Help Manual - active in ANY window
+            if key == Qt.Key.Key_F1 or (ctrl and key == Qt.Key.Key_H):
+                self.main_win._open_help()
+                return True
+
+            # 8. Ctrl+U: Unwind Cable - active in ANY window
+            if ctrl and key == Qt.Key.Key_U:
+                self.main_win._unwind_cable()
+                return True
+
+            # 9. Ctrl+1, Ctrl+2, Ctrl+3: Slew Speed (Fine, Medium, Coarse)
+            if ctrl and key == Qt.Key.Key_1:
+                self.main_win._set_speed_and_button("fine")
+                return True
+            if ctrl and key == Qt.Key.Key_2:
+                self.main_win._set_speed_and_button("medium")
+                return True
+            if ctrl and key == Qt.Key.Key_3:
+                self.main_win._set_speed_and_button("coarse")
+                return True
+
+            # 10. Arrow Keys: Altitude & Azimuth Jogging
+            # Active in any window when focus is not inside an input box or dropdown
+            if not is_input_widget and not ctrl and not alt:
+                if key == Qt.Key.Key_Up:
+                    self.main_win._jog("up")
+                    return True
+                elif key == Qt.Key.Key_Down:
+                    self.main_win._jog("down")
+                    return True
+                elif key == Qt.Key.Key_Left:
+                    self.main_win._jog("left")
+                    return True
+                elif key == Qt.Key.Key_Right:
+                    self.main_win._jog("right")
+                    return True
+
+        return super().eventFilter(watched, event)
+
 class AstroTelescopeWindow(QMainWindow):
     """Professional 3-Axis Telescope Mount & Stellarium Bridge Desktop Application."""
 
@@ -799,18 +890,60 @@ class AstroTelescopeWindow(QMainWindow):
     # --------------------------------------------------------------------------
 
     def _setup_shortcuts(self) -> None:
+        """Installs application-wide event filters and multi-window shortcuts."""
+        app = QApplication.instance()
+        if app:
+            if not hasattr(self, "_global_shortcut_filter") or self._global_shortcut_filter is None:
+                self._global_shortcut_filter = GlobalShortcutEventFilter(self)
+                app.installEventFilter(self._global_shortcut_filter)
+
         def _safe_jog(direction: str):
             focus_w = QApplication.focusWidget()
-            if isinstance(focus_w, (QComboBox, QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox)):
+            if isinstance(focus_w, (QComboBox, QLineEdit, QTextEdit, QtWidgets.QPlainTextEdit, QSpinBox, QDoubleSpinBox)):
                 return
             self._jog(direction)
 
-        QShortcut(QKeySequence(Qt.Key.Key_Up), self, lambda: _safe_jog("up"))
-        QShortcut(QKeySequence(Qt.Key.Key_Down), self, lambda: _safe_jog("down"))
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self, lambda: _safe_jog("left"))
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self, lambda: _safe_jog("right"))
-        QShortcut(QKeySequence(Qt.Key.Key_Space), self, self._emergency_stop)
-        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._emergency_stop)
+        def _safe_space():
+            focus_w = QApplication.focusWidget()
+            if isinstance(focus_w, (QLineEdit, QTextEdit, QtWidgets.QPlainTextEdit)):
+                return
+            self._emergency_stop()
+
+        def _reg(key_val, callback):
+            sc = QShortcut(QKeySequence(key_val), self)
+            sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            sc.activated.connect(callback)
+            return sc
+
+        self._registered_shortcuts = [
+            _reg("Alt+N", self.toggle_night_mode),
+            _reg("Ctrl+N", self.toggle_night_mode),
+            _reg("Escape", self._emergency_stop),
+            _reg("Space", _safe_space),
+            _reg("Ctrl+T", self._open_sky_tour),
+            _reg("Ctrl+G", self._open_goto_dialog),
+            _reg("Ctrl+M", self._open_serial_monitor),
+            _reg("Ctrl+S", self._open_settings),
+            _reg("Ctrl+H", self._open_help),
+            _reg(Qt.Key.Key_F1, self._open_help),
+            _reg("Ctrl+U", self._unwind_cable),
+            _reg("Ctrl+1", lambda: self._set_speed_and_button("fine")),
+            _reg("Ctrl+2", lambda: self._set_speed_and_button("medium")),
+            _reg("Ctrl+3", lambda: self._set_speed_and_button("coarse")),
+            _reg(Qt.Key.Key_Up, lambda: _safe_jog("up")),
+            _reg(Qt.Key.Key_Down, lambda: _safe_jog("down")),
+            _reg(Qt.Key.Key_Left, lambda: _safe_jog("left")),
+            _reg(Qt.Key.Key_Right, lambda: _safe_jog("right")),
+        ]
+
+    def _set_speed_and_button(self, mode: str) -> None:
+        self._set_speed(mode)
+        if mode == "fine" and hasattr(self, "btn_fine"):
+            self.btn_fine.setChecked(True)
+        elif mode == "medium" and hasattr(self, "btn_med"):
+            self.btn_med.setChecked(True)
+        elif mode == "coarse" and hasattr(self, "btn_coarse"):
+            self.btn_coarse.setChecked(True)
 
     def _set_speed(self, mode: str) -> None:
         self.selected_jog_speed = mode
@@ -1289,22 +1422,50 @@ class AstroTelescopeWindow(QMainWindow):
             self.core.zero_position()
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self.config, night_mode=self.night_mode, parent=self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            if self.core:
-                self.core.config = self.config
-                try:
-                    self.core.push_hardware_config()
-                except Exception as e:
-                    self.log_message("WARN", f"Could not push hardware config: {e}")
-                self.log_message("INFO", "Configuration updated and applied.")
+        if not hasattr(self, "settings_dlg") or self.settings_dlg is None:
+            self.settings_dlg = SettingsDialog(self.config, night_mode=self.night_mode, parent=self)
+            self.settings_dlg.accepted.connect(self._on_settings_applied)
+        elif hasattr(self.settings_dlg, "set_night_mode"):
+            self.settings_dlg.set_night_mode(self.night_mode)
+        if self.settings_dlg.isMinimized():
+            self.settings_dlg.showNormal()
+        else:
+            self.settings_dlg.show()
+        self.settings_dlg.raise_()
+        self.settings_dlg.activateWindow()
+
+    def _on_settings_applied(self) -> None:
+        if self.core:
+            self.core.config = self.config
+            try:
+                self.core.push_hardware_config()
+            except Exception as e:
+                self.log_message("WARN", f"Could not push hardware config: {e}")
+            self.log_message("INFO", "Configuration updated and applied.")
 
     def _open_help(self) -> None:
-        dialog = HelpGuideDialog(night_mode=self.night_mode, parent=self)
-        dialog.exec()
+        if not hasattr(self, "help_dlg") or self.help_dlg is None:
+            self.help_dlg = HelpGuideDialog(night_mode=self.night_mode, parent=self)
+        elif hasattr(self.help_dlg, "set_night_mode"):
+            self.help_dlg.set_night_mode(self.night_mode)
+        if self.help_dlg.isMinimized():
+            self.help_dlg.showNormal()
+        else:
+            self.help_dlg.show()
+        self.help_dlg.raise_()
+        self.help_dlg.activateWindow()
 
     def _open_goto_dialog(self) -> None:
-        self._open_sky_tour()
+        if not hasattr(self, "goto_window") or self.goto_window is None:
+            self.goto_window = GoToDialog(core=self.core, config=self.config, night_mode=self.night_mode, parent=self)
+        elif hasattr(self.goto_window, "set_night_mode"):
+            self.goto_window.set_night_mode(self.night_mode)
+        if self.goto_window.isMinimized():
+            self.goto_window.showNormal()
+        else:
+            self.goto_window.show()
+        self.goto_window.raise_()
+        self.goto_window.activateWindow()
 
     def _open_sky_tour(self) -> None:
         if self.tour_window is None:
@@ -1707,6 +1868,14 @@ class AstroTelescopeWindow(QMainWindow):
             self.console_text.setTextCursor(cursor)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        app = QApplication.instance()
+        if app and hasattr(self, "_global_shortcut_filter") and self._global_shortcut_filter:
+            try:
+                app.removeEventFilter(self._global_shortcut_filter)
+            except Exception:
+                pass
+        if hasattr(self, "goto_window") and self.goto_window and self.goto_window.isVisible():
+            self.goto_window.close()
         if hasattr(self, "tour_window") and self.tour_window and self.tour_window.isVisible():
             self.tour_window.close()
         if hasattr(self, 'follower') and self.follower:

@@ -113,6 +113,7 @@ Custom-GoTo-Telescope/
 ├── tests/                      # Automated unit & integration verification suite
 │   ├── test_serial_monitor_and_optics.py
 │   ├── test_tonight_best_alignment.py
+│   ├── test_global_shortcuts.py
 │   └── test_verification_suite.py
 ├── .gitignore                  # Git ignore rules
 ├── build_exe.py                # Standalone Windows PyInstaller packaging script
@@ -144,16 +145,25 @@ Custom-GoTo-Telescope/
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action | Description |
-| :--- | :--- | :--- |
-| `Alt + N` / `Ctrl + N` | **Toggle Night Vision** | Switch between Obsidian Dark and Pure-Red Night Vision |
-| `Space` / `Escape` | **Emergency Stop** | Instantly halts all motor slews and tracking |
-| `Up` / `Down` Arrow | **Altitude Jog** | Step altitude axis up (+) or down (-) |
-| `Left` / `Right` Arrow | **Azimuth Jog** | Step azimuth axis left (CCW) or right (CW) |
-| `Ctrl + T` | **Tonight's Best** | Open curated celestial targets tour dialog |
-| `Ctrl + G` | **GoTo Coordinates** | Open manual celestial coordinate entry dialog |
-| `Ctrl + M` | **Serial Monitor** | Open raw bidirectional serial inspector |
-| `Ctrl + S` | **Settings** | Open mount kinematics and configuration dialog |
+> [!NOTE]
+> **Application-Wide Scope:** All shortcuts are monitored via an application-level event filter and work seamlessly across **any open window or dialog** in the application (even while examining Tonight's Best, GoTo coordinates, Serial Monitor, Settings, or Help).
+
+| Shortcut | Action | Scope / Context | Description |
+| :--- | :--- | :--- | :--- |
+| `Alt + N` / `Ctrl + N` | **Toggle Night Vision** | Global (Any Window) | Instantly switch between Obsidian Dark and Pure-Red OLED Night Vision across all windows |
+| `Escape` | **Emergency Stop** | Global (Any Window) | Instantly aborts all motor slews, jogs, and tracking routines |
+| `Space` | **Emergency Stop** | Non-text entry | Immediately halts all motors (safe spacebar: passes spaces normally when typing in text fields) |
+| `Up` / `Down` Arrow | **Altitude Jog** | Global (Any Window) | Step altitude axis up (+) or down (-) at selected jog speed |
+| `Left` / `Right` Arrow | **Azimuth Jog** | Global (Any Window) | Step azimuth axis left (CCW) or right (CW) at selected jog speed |
+| `Ctrl + 1` | **Speed: Fine** | Global (Any Window) | Set jog resolution to Fine (0.05° per step) |
+| `Ctrl + 2` | **Speed: Medium** | Global (Any Window) | Set jog resolution to Medium (0.50° per step) |
+| `Ctrl + 3` | **Speed: Coarse** | Global (Any Window) | Set jog resolution to Coarse (3.00° per step) |
+| `Ctrl + T` | **Tonight's Best** | Global (Any Window) | Open or bring to front the curated Tonight's Best sky tour |
+| `Ctrl + G` | **GoTo Coordinates** | Global (Any Window) | Open or bring to front the manual GoTo target & catalog dialog |
+| `Ctrl + M` | **Serial Monitor** | Global (Any Window) | Open or bring to front the raw bidirectional ASCII/HEX serial terminal |
+| `Ctrl + S` | **Settings** | Global (Any Window) | Open the kinematics, observer GPS site, and bridge port configuration |
+| `F1` / `Ctrl + H` | **Help & Manual** | Global (Any Window) | Open the technical user manual and electronics documentation |
+| `Ctrl + U` | **Unwind Cable** | Global (Any Window) | Slew Azimuth back to 0° True North to untangle motor and camera cables |
 
 ---
 
