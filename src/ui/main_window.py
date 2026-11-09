@@ -201,7 +201,7 @@ class AstroTelescopeWindow(QMainWindow):
         if not app_icon.isNull():
             self.setWindowIcon(app_icon)
             QApplication.setWindowIcon(app_icon)
-        self.resize(1280, 880)
+        self.resize(1360, 900)
         self.setMinimumSize(1080, 780)
 
         # State: Night mode, console history, and slew arrival tracking
@@ -317,8 +317,17 @@ class AstroTelescopeWindow(QMainWindow):
         layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(12)
 
-        # Clean header column without icon or text banner
-        layout.addSpacing(4)
+        # Compact identity block anchors the connection and status controls.
+        brand = QVBoxLayout()
+        brand.setSpacing(0)
+        brand_title = QLabel("CUSTOM GOTO")
+        brand_title.setProperty("class", "title")
+        brand_subtitle = QLabel("TELESCOPE CONTROL")
+        brand_subtitle.setProperty("class", "subtitle")
+        brand.addWidget(brand_title)
+        brand.addWidget(brand_subtitle)
+        layout.addLayout(brand)
+        layout.addSpacing(10)
 
         # Serial Connection Bar
         conn_box = QHBoxLayout()

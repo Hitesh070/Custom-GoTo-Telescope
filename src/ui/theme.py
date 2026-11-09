@@ -15,27 +15,27 @@ from PyQt6.QtWidgets import QWidget
 
 SCIENTIFIC_STYLE = """
 QMainWindow, QDialog {
-    background-color: #0d1117;
-    color: #e6edf3;
+    background-color: #0b1018;
+    color: #e7edf5;
 }
 
 QWidget {
     font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
-    color: #c9d1d9;
+    color: #d2d9e4;
     font-size: 12px;
 }
 
 /* Elevated Card Surfaces with Windows 11 Rounded Geometry */
 QFrame.card {
-    background-color: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
+    background-color: #111a26;
+    border: 1px solid #263448;
+    border-radius: 10px;
     padding: 8px;
 }
 
 QFrame.header-deck {
-    background-color: #12161f;
-    border-bottom: 1px solid #30363d;
+    background-color: #101722;
+    border-bottom: 1px solid #27364a;
 }
 
 QLabel {
@@ -43,7 +43,7 @@ QLabel {
 }
 
 QLabel.title {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
     color: #ffffff;
     letter-spacing: 0.5px;
@@ -57,11 +57,11 @@ QLabel.subtitle {
 QLabel.section-header {
     font-size: 12px;
     font-weight: 700;
-    color: #58a6ff;
+    color: #69b9f5;
     text-transform: uppercase;
     letter-spacing: 0.8px;
     padding-bottom: 4px;
-    border-bottom: 1px solid #30363d;
+    border-bottom: 1px solid #27364a;
 }
 
 /* Precision Monospace Telemetry Typography */
@@ -109,34 +109,64 @@ QLabel.status-pill {
 
 /* Interactive Buttons */
 QPushButton {
-    background-color: #21262d;
-    color: #c9d1d9;
-    border: 1px solid #363d47;
-    border-radius: 6px;
-    padding: 6px 14px;
+    background-color: #192536;
+    color: #d7e1ee;
+    border: 1px solid #30435c;
+    border-radius: 7px;
+    padding: 7px 13px;
     font-weight: 600;
     font-size: 12px;
 }
 
 QPushButton:hover {
-    background-color: #30363d;
-    border-color: #8b949e;
+    background-color: #22334a;
+    border-color: #5d8fbd;
     color: #ffffff;
 }
 
 QPushButton:pressed {
-    background-color: #161b22;
+    background-color: #101925;
 }
 
 QPushButton:disabled {
-    background-color: #161b22;
+    background-color: #121a24;
     color: #484f58;
     border-color: #21262d;
 }
 
 QPushButton.btn-primary {
-    background-color: #1f6feb;
-    border-color: #388bfd;
+    background-color: #1769aa;
+    border-color: #3c9de0;
+    color: #ffffff;
+}
+
+QPushButton[class="primary"] {
+    background-color: #1769aa;
+    border: 1px solid #3c9de0;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+QPushButton[class="primary"]:hover {
+    background-color: #2081c9;
+    border-color: #78c5f5;
+}
+
+QPushButton[class="stop-btn"] {
+    background-color: #8e2830;
+    border: 1px solid #df5961;
+    color: #ffffff;
+    font-weight: 800;
+}
+
+QPushButton[class="stop-btn"]:hover {
+    background-color: #b5343e;
+    border-color: #ff8a8f;
+}
+
+QPushButton[class="sync-btn"] {
+    background-color: #1769aa;
+    border: 1px solid #3c9de0;
     color: #ffffff;
 }
 
@@ -232,16 +262,16 @@ QPushButton.pill-btn:checked {
 
 /* Inputs & Form Controls */
 QLineEdit, QSpinBox, QDoubleSpinBox {
-    background-color: #0d1117;
+    background-color: #0b121c;
     color: #ffffff;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    padding: 5px 8px;
+    border: 1px solid #2b3c52;
+    border-radius: 7px;
+    padding: 6px 9px;
     selection-background-color: #1f6feb;
 }
 
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-    border: 1px solid #58a6ff;
+    border: 1px solid #4ca9e6;
 }
 
 QComboBox {
@@ -314,16 +344,16 @@ QTextEdit, QPlainTextEdit {
 
 /* Modern Tab Widget */
 QTabWidget::pane {
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    background-color: #161b22;
+    border: 1px solid #2b3c52;
+    border-radius: 8px;
+    background-color: #111a26;
     top: -1px;
 }
 
 QTabBar::tab {
-    background-color: #0d1117;
+    background-color: #0b1018;
     color: #8b949e;
-    border: 1px solid #30363d;
+    border: 1px solid #2b3c52;
     border-bottom: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
@@ -333,9 +363,9 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected {
-    background-color: #161b22;
-    color: #58a6ff;
-    border-bottom: 2px solid #58a6ff;
+    background-color: #111a26;
+    color: #75c7fb;
+    border-bottom: 2px solid #4ca9e6;
 }
 
 QTabBar::tab:hover:!selected {
@@ -426,9 +456,9 @@ QWidget {
 }
 
 QFrame.card {
-    background-color: #0a0002;
-    border: 1px solid #4a000a;
-    border-radius: 8px;
+    background-color: #080001;
+    border: 1px solid #3c1018;
+    border-radius: 10px;
     padding: 8px;
 }
 
@@ -500,11 +530,11 @@ QLabel.mono-val {
 
 /* Buttons in Night Vision */
 QPushButton {
-    background-color: #120003;
+    background-color: #150306;
     color: #ff3344;
-    border: 1px solid #4a000a;
-    border-radius: 6px;
-    padding: 6px 14px;
+    border: 1px solid #541722;
+    border-radius: 7px;
+    padding: 7px 13px;
     font-weight: 600;
     font-size: 12px;
 }
@@ -523,6 +553,37 @@ QPushButton:disabled {
     background-color: #050001;
     color: #4a000a;
     border-color: #1a0003;
+}
+
+QPushButton[class="primary"] {
+    background-color: #4a0b14;
+    border: 1px solid #9b2637;
+    color: #ff8792;
+    font-weight: 700;
+}
+
+QPushButton[class="primary"]:hover {
+    background-color: #64101c;
+    border-color: #e23c52;
+    color: #ffffff;
+}
+
+QPushButton[class="stop-btn"] {
+    background-color: #650812;
+    border: 1px solid #e1293e;
+    color: #ffffff;
+    font-weight: 800;
+}
+
+QPushButton[class="stop-btn"]:hover {
+    background-color: #8a0c1b;
+    border-color: #ff5365;
+}
+
+QPushButton[class="sync-btn"] {
+    background-color: #4a0b14;
+    border: 1px solid #9b2637;
+    color: #ff8792;
 }
 
 QPushButton.btn-primary {
