@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
     QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, 
     QRadioButton, QButtonGroup, QTextEdit, QFrame, QSplitter, 
     QDialog, QFormLayout, QDoubleSpinBox, QSpinBox, 
-    QLineEdit, QMessageBox, QTabWidget, QScrollArea, QProgressBar,
+    QLineEdit, QMessageBox, QProgressBar,
     QTableWidget, QTableWidgetItem, QHeaderView
 )
 
@@ -183,7 +183,7 @@ class AstroTelescopeWindow(QMainWindow):
         self.stellarium = stellarium
         self.config = config
 
-        self.setWindowTitle("Custom GoTo")
+        self.setWindowTitle("Custom GoTo | Mission Control")
 
         # Load and apply black hole application icon (multi-resolution .ico and high-res .png)
         ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "black_hole_icon.ico")
@@ -201,8 +201,8 @@ class AstroTelescopeWindow(QMainWindow):
         if not app_icon.isNull():
             self.setWindowIcon(app_icon)
             QApplication.setWindowIcon(app_icon)
-        self.resize(1280, 880)
-        self.setMinimumSize(1080, 780)
+        self.resize(1540, 980)
+        self.setMinimumSize(1380, 850)
 
         # State: Night mode, console history, and slew arrival tracking
         self.night_mode: bool = bool(self.config.get("night_mode", False))
@@ -275,36 +275,36 @@ class AstroTelescopeWindow(QMainWindow):
 
     def _build_interface(self) -> None:
         root_widget = QWidget()
+        root_widget.setObjectName("appCanvas")
         self.setCentralWidget(root_widget)
         main_layout = QVBoxLayout(root_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(12, 10, 12, 8)
+        main_layout.setSpacing(8)
 
-        # 1. Top Header Deck
         main_layout.addWidget(self._create_header_deck())
-
-        # 2. Safety Caution Strip
         main_layout.addWidget(self._create_safety_strip())
 
-        # 3. Main Workspace
         workspace = QWidget()
         ws_layout = QHBoxLayout(workspace)
-        ws_layout.setContentsMargins(12, 10, 12, 8)
-        ws_layout.setSpacing(12)
+        ws_layout.setContentsMargins(0, 0, 0, 0)
+        ws_layout.setSpacing(8)
+        sky_stage = self._create_left_radar_column()
+        sky_stage.setObjectName("missionRadarPanel")
+        ws_layout.addWidget(sky_stage, stretch=6)
 
-        # Left Column: Enlarged Sky Radar & Observatory Clocks
-        ws_layout.addWidget(self._create_left_radar_column(), stretch=5)
+        telemetry = self._create_center_telemetry_column()
+        telemetry.setObjectName("missionTelemetryPanel")
+        ws_layout.addWidget(telemetry, stretch=6)
 
-        # Center Column: Prominent Large Telemetry Deck (Matching Stellarium)
-        ws_layout.addWidget(self._create_center_telemetry_column(), stretch=6)
+        operations = self._create_right_control_column()
+        operations.setObjectName("missionOperationsPanel")
+        ws_layout.addWidget(operations, stretch=4)
 
-        # Right Column: Motion D-Pad & Focus Controller
-        ws_layout.addWidget(self._create_right_control_column(), stretch=4)
+        main_layout.addWidget(workspace, stretch=1)
 
-        main_layout.addWidget(workspace, stretch=8)
-
-        # 4. Bottom Activity Console
-        main_layout.addWidget(self._create_console_deck(), stretch=2)
+        console = self._create_console_deck()
+        console.setMaximumHeight(104)
+        main_layout.addWidget(console, stretch=0)
 
     # --------------------------------------------------------------------------
     # Sub-deck Layouts
@@ -313,100 +313,134 @@ class AstroTelescopeWindow(QMainWindow):
     def _create_header_deck(self) -> QWidget:
         header = QFrame()
         header.setProperty("class", "header-deck")
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(14, 8, 14, 8)
-        layout.setSpacing(12)
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(10)
 
-        # Clean header column without icon or text banner
-        layout.addSpacing(4)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(9)
+        brand_mark = QLabel("CG")
+        brand_mark.setObjectName("brandMark")
+        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_mark.setFixedSize(42, 42)
+        top_row.addWidget(brand_mark)
 
-        # Serial Connection Bar
-        conn_box = QHBoxLayout()
-        conn_box.setSpacing(6)
-
-        self.lbl_p = QLabel("Serial Port:")
-        lbl_p = self.lbl_p
-        lbl_p.setStyleSheet("font-size: 11px; color: #8892A0;" if not self.night_mode else "font-size: 11px; color: #AA2222;")
-        conn_box.addWidget(lbl_p)
-
-        self.port_combo = QComboBox()
-        self.port_combo.setMinimumWidth(110)
-        conn_box.addWidget(self.port_combo)
-
-        btn_refresh = QPushButton("Scan Ports")
-        btn_refresh.setToolTip("Scan serial COM ports")
-        btn_refresh.clicked.connect(self._refresh_ports)
-        conn_box.addWidget(btn_refresh)
-
-        self.chk_simulate = QCheckBox("Simulate Uno")
-        self.chk_simulate.setChecked(bool(self.config.get("simulate", False)))
-        self.chk_simulate.setToolTip("Emulate Arduino Uno and motor kinematics in software")
-        conn_box.addWidget(self.chk_simulate)
-
-        self.btn_connect = QPushButton("Connect")
-        self.btn_connect.setProperty("class", "primary")
-        self.btn_connect.clicked.connect(self._toggle_connection)
-        conn_box.addWidget(self.btn_connect)
-
-        layout.addLayout(conn_box)
-
-        layout.addStretch()
-
-        # Status Pills
-        status_box = QHBoxLayout()
-        status_box.setSpacing(10)
+        brand = QVBoxLayout()
+        brand.setSpacing(1)
+        brand_title = QLabel("CUSTOM GOTO")
+        brand_title.setProperty("class", "title")
+        brand_subtitle = QLabel("OBSERVATORY CONTROL")
+        brand_subtitle.setProperty("class", "subtitle")
+        brand.addWidget(brand_title)
+        brand.addWidget(brand_subtitle)
+        top_row.addLayout(brand)
+        top_row.addSpacing(24)
 
         self.lbl_serial_status = QLabel("ARDUINO: DISCONNECTED")
-        self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
-        status_box.addWidget(self.lbl_serial_status)
+        self.lbl_serial_status.setObjectName("serialStatus")
+        self.lbl_serial_status.setStyleSheet("font-size: 10px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 6px 10px; border: 1px solid #B31D1D; border-radius: 10px;")
+        top_row.addWidget(self.lbl_serial_status)
 
         self.lbl_stellarium_status = QLabel("STELLARIUM: LISTENING [10001]")
-        self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
-        status_box.addWidget(self.lbl_stellarium_status)
+        self.lbl_stellarium_status.setObjectName("stellariumStatus")
+        self.lbl_stellarium_status.setStyleSheet("font-size: 10px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 6px 10px; border: 1px solid #B31D1D; border-radius: 10px;")
+        top_row.addWidget(self.lbl_stellarium_status)
 
-        self.btn_weather = QPushButton("[WEATHER: CHECKING...]")
+        self.lbl_live_pulse = QLabel("●  LIVE TELEMETRY")
+        self.lbl_live_pulse.setObjectName("livePulse")
+        top_row.addWidget(self.lbl_live_pulse)
+        self.live_pulse_effect = QtWidgets.QGraphicsOpacityEffect(self.lbl_live_pulse)
+        self.lbl_live_pulse.setGraphicsEffect(self.live_pulse_effect)
+        self.live_pulse_animation = QtCore.QPropertyAnimation(self.live_pulse_effect, b"opacity", self)
+        self.live_pulse_animation.setDuration(1600)
+        self.live_pulse_animation.setStartValue(0.58)
+        self.live_pulse_animation.setEndValue(1.0)
+        self.live_pulse_animation.setEasingCurve(QtCore.QEasingCurve.Type.InOutSine)
+        self.live_pulse_animation.setLoopCount(-1)
+        self.live_pulse_animation.start()
+        top_row.addStretch(1)
+
+        self.btn_weather = QPushButton("WEATHER · CHECKING")
+        self.btn_weather.setObjectName("weatherButton")
         self.btn_weather.setToolTip("Query live Open-Meteo meteorological cloud cover & seeing telemetry")
         self.btn_weather.clicked.connect(self._refresh_weather_clicked)
-        self.btn_weather.setStyleSheet("background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;")
-        status_box.addWidget(self.btn_weather)
-
-
-
-        layout.addLayout(status_box)
+        self.btn_weather.setStyleSheet("background-color: #172638; border: 1px solid #314761; color: #D9E8F7; font-size: 10px; font-weight: 700; padding: 6px 10px; border-radius: 10px;")
+        top_row.addWidget(self.btn_weather)
 
         btn_settings = QPushButton("Settings")
         btn_settings.clicked.connect(self._open_settings)
-        layout.addWidget(btn_settings)
+        top_row.addWidget(btn_settings)
 
         self.btn_help = QPushButton("Help")
         self.btn_help.clicked.connect(self._open_help)
-        layout.addWidget(self.btn_help)
+        top_row.addWidget(self.btn_help)
 
         self.btn_night_mode = QPushButton("Night Vision: ON" if self.night_mode else "Night Vision")
-        if self.night_mode:
-            self.btn_night_mode.setStyleSheet("background-color: #660A0A; border-color: #991414; color: #FFB3B3; font-weight: 700;")
         self.btn_night_mode.setToolTip("Toggle pure-red night-vision mode to preserve dark adaptation (Ctrl+N)")
         self.btn_night_mode.clicked.connect(self.toggle_night_mode)
-        layout.addWidget(self.btn_night_mode)
+        top_row.addWidget(self.btn_night_mode)
 
         self.btn_estop = QPushButton("STOP")
         self.btn_estop.setProperty("class", "stop-btn")
         self.btn_estop.setToolTip("Emergency Stop (Spacebar / Esc)")
         self.btn_estop.clicked.connect(self._emergency_stop)
-        layout.addWidget(self.btn_estop)
+        self.btn_estop.setMinimumWidth(74)
+        top_row.addWidget(self.btn_estop)
+        layout.addLayout(top_row)
+
+        connection = QFrame()
+        connection.setObjectName("connectionStrip")
+        connection_layout = QHBoxLayout(connection)
+        connection_layout.setContentsMargins(10, 7, 10, 7)
+        connection_layout.setSpacing(8)
+
+        link_label = QLabel("MOUNT LINK")
+        link_label.setObjectName("eyebrow")
+        connection_layout.addWidget(link_label)
+        self.lbl_p = QLabel("SERIAL PORT")
+        self.lbl_p.setObjectName("portLabel")
+        connection_layout.addWidget(self.lbl_p)
+
+        self.port_combo = QComboBox()
+        self.port_combo.setMinimumWidth(140)
+        connection_layout.addWidget(self.port_combo)
+
+        btn_refresh = QPushButton("↻  Scan")
+        btn_refresh.setToolTip("Scan serial COM ports")
+        btn_refresh.clicked.connect(self._refresh_ports)
+        connection_layout.addWidget(btn_refresh)
+
+        self.chk_simulate = QCheckBox("Simulator")
+        self.chk_simulate.setChecked(bool(self.config.get("simulate", False)))
+        self.chk_simulate.setToolTip("Emulate Arduino Uno and motor kinematics in software")
+        connection_layout.addWidget(self.chk_simulate)
+        connection_layout.addStretch(1)
+
+        self.btn_connect = QPushButton("Connect mount")
+        self.btn_connect.setProperty("class", "primary")
+        self.btn_connect.clicked.connect(self._toggle_connection)
+        self.btn_connect.setMinimumWidth(130)
+        connection_layout.addWidget(self.btn_connect)
+        layout.addWidget(connection)
 
         return header
 
     def _create_safety_strip(self) -> QWidget:
         self.safety_strip = QFrame()
         strip = self.safety_strip
-        strip.setStyleSheet("background-color: #381B1B; border-bottom: 1px solid #4D2626;" if not self.night_mode else "background-color: #240505; border-bottom: 1px solid #4D0A0A;")
+        strip.setObjectName("safetyBanner")
+        strip.setStyleSheet("background-color: #342512; border: 1px solid #72511F; border-radius: 10px;" if not self.night_mode else "background-color: #180004; border: 1px solid #5D1018; border-radius: 10px;")
         layout = QHBoxLayout(strip)
-        layout.setContentsMargins(14, 3, 14, 3)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(10)
 
-        self.lbl_warn = QLabel("CAUTION: NEVER POINT TELESCOPE AT OR NEAR THE SUN WITHOUT A CERTIFIED SOLAR FILTER")
+        safety_tag = QLabel("SOLAR SAFETY")
+        safety_tag.setObjectName("safetyTag")
+        layout.addWidget(safety_tag)
+
+        self.lbl_warn = QLabel("Keep the telescope capped or fit a certified solar filter before any solar observation.")
         lbl_warn = self.lbl_warn
-        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #FFFFFF;" if not self.night_mode else "font-size: 10px; font-weight: 700; color: #FF3333;")
+        lbl_warn.setStyleSheet("font-size: 10px; font-weight: 600; color: #FFFFFF;" if not self.night_mode else "font-size: 10px; font-weight: 600; color: #FF7777;")
         layout.addWidget(lbl_warn)
 
         layout.addStretch()
@@ -441,6 +475,7 @@ class AstroTelescopeWindow(QMainWindow):
         head_box = QHBoxLayout()
         lbl_title = QLabel("CELESTIAL SKY RADAR (ALTITUDE - AZIMUTH)")
         lbl_title.setProperty("class", "section-header")
+        lbl_title.setObjectName("panelHeading")
         head_box.addWidget(lbl_title)
         head_box.addStretch()
 
@@ -451,6 +486,7 @@ class AstroTelescopeWindow(QMainWindow):
         radar_layout.addLayout(head_box)
 
         self.radar_widget = EnlargedPolarRadarWidget()
+        self.radar_widget.setMinimumSize(320, 320)
         radar_layout.addWidget(self.radar_widget, stretch=1)
         layout.addWidget(radar_card, stretch=6)
 
@@ -496,20 +532,22 @@ class AstroTelescopeWindow(QMainWindow):
 
     def _create_center_telemetry_column(self) -> QWidget:
         col = QWidget()
+        col.setObjectName("telemetryRail")
         layout = QVBoxLayout(col)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         # Table 1: Mount Position Details (Matching Stellarium Parameters)
         card_mount = QFrame()
         card_mount.setProperty("class", "card")
         lay_mount = QVBoxLayout(card_mount)
-        lay_mount.setContentsMargins(14, 10, 14, 10)
-        lay_mount.setSpacing(6)
+        lay_mount.setContentsMargins(10, 7, 10, 7)
+        lay_mount.setSpacing(4)
 
         head_row = QHBoxLayout()
         lbl_head1 = QLabel("TELESCOPE MOUNT POSITION (CURRENT)")
         lbl_head1.setProperty("class", "section-header")
+        lbl_head1.setObjectName("panelHeading")
         head_row.addWidget(lbl_head1)
         head_row.addStretch()
 
@@ -528,6 +566,7 @@ class AstroTelescopeWindow(QMainWindow):
         grid1 = QGridLayout()
         grid1.setVerticalSpacing(6)
         grid1.setHorizontalSpacing(16)
+        grid1.setColumnStretch(1, 1)
 
         fields1 = [
             ("RA/Dec (J2000.0):", "val_m_j2000"),
@@ -546,6 +585,7 @@ class AstroTelescopeWindow(QMainWindow):
             lbl_k.setProperty("class", "table-key")
             lbl_v = QLabel("--")
             lbl_v.setProperty("class", "table-val")
+            lbl_v.setWordWrap(False)
             setattr(self, attr_name, lbl_v)
             grid1.addWidget(lbl_k, row, 0)
             grid1.addWidget(lbl_v, row, 1)
@@ -557,12 +597,13 @@ class AstroTelescopeWindow(QMainWindow):
         card_target = QFrame()
         card_target.setProperty("class", "card")
         lay_target = QVBoxLayout(card_target)
-        lay_target.setContentsMargins(14, 10, 14, 10)
-        lay_target.setSpacing(6)
+        lay_target.setContentsMargins(10, 7, 10, 7)
+        lay_target.setSpacing(4)
 
         head_row2 = QHBoxLayout()
         lbl_head2 = QLabel("CURRENT TRACKED OBJECT (STELLARIUM TARGET)")
         lbl_head2.setProperty("class", "section-header")
+        lbl_head2.setObjectName("panelHeading")
         head_row2.addWidget(lbl_head2)
         head_row2.addStretch()
 
@@ -576,6 +617,7 @@ class AstroTelescopeWindow(QMainWindow):
         grid2 = QGridLayout()
         grid2.setVerticalSpacing(5)
         grid2.setHorizontalSpacing(14)
+        grid2.setColumnStretch(1, 1)
 
         fields2 = [
             ("Target Status:", "val_t_status"),
@@ -595,58 +637,61 @@ class AstroTelescopeWindow(QMainWindow):
             lbl_k.setProperty("class", "table-key")
             lbl_v = QLabel("None")
             lbl_v.setProperty("class", "table-val")
+            lbl_v.setWordWrap(False)
             setattr(self, attr_name, lbl_v)
             grid2.addWidget(lbl_k, row, 0)
             grid2.addWidget(lbl_v, row, 1)
 
         lay_target.addLayout(grid2)
-        layout.addWidget(card_target, stretch=4)
+        layout.addWidget(card_target, stretch=5)
 
         return col
 
     def _create_right_control_column(self) -> QWidget:
         col = QWidget()
+        col.setObjectName("commandRail")
         layout = QVBoxLayout(col)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         # Motion & Jog Card
         jog_card = QFrame()
         jog_card.setProperty("class", "card")
         jog_layout = QVBoxLayout(jog_card)
-        jog_layout.setContentsMargins(12, 8, 12, 8)
-        jog_layout.setSpacing(6)
+        jog_layout.setContentsMargins(9, 6, 9, 6)
+        jog_layout.setSpacing(4)
 
         lbl_jog = QLabel("MANUAL MOTION CONTROLS")
         lbl_jog.setProperty("class", "section-header")
+        lbl_jog.setObjectName("panelHeading")
         jog_layout.addWidget(lbl_jog)
 
         dpad_grid = QGridLayout()
-        dpad_grid.setSpacing(5)
+        dpad_grid.setSpacing(3)
 
         btn_up = QPushButton("ALT +")
-        btn_up.setMinimumHeight(36)
+        btn_up.setMinimumHeight(29)
         btn_up.clicked.connect(lambda: self._jog("up"))
         dpad_grid.addWidget(btn_up, 0, 1)
 
         btn_left = QPushButton("AZ -")
-        btn_left.setMinimumHeight(36)
+        btn_left.setMinimumHeight(29)
         btn_left.clicked.connect(lambda: self._jog("left"))
         dpad_grid.addWidget(btn_left, 1, 0)
 
         btn_stop = QPushButton("STOP")
         btn_stop.setProperty("class", "stop-btn")
-        btn_stop.setMinimumHeight(36)
+        btn_stop.setMinimumHeight(29)
         btn_stop.clicked.connect(self._emergency_stop)
         dpad_grid.addWidget(btn_stop, 1, 1)
 
         btn_right = QPushButton("AZ +")
-        btn_right.setMinimumHeight(36)
+        btn_right.setMinimumHeight(29)
         btn_right.clicked.connect(lambda: self._jog("right"))
         dpad_grid.addWidget(btn_right, 1, 2)
 
         btn_down = QPushButton("ALT -")
-        btn_down.setMinimumHeight(36)
+        btn_down.setMinimumHeight(29)
         btn_down.clicked.connect(lambda: self._jog("down"))
         dpad_grid.addWidget(btn_down, 2, 1)
 
@@ -659,6 +704,9 @@ class AstroTelescopeWindow(QMainWindow):
         self.btn_fine = QPushButton("Fine (0.05°)")
         self.btn_med = QPushButton("Medium (0.50°)")
         self.btn_coarse = QPushButton("Coarse (3.00°)")
+        for speed_button in (self.btn_fine, self.btn_med, self.btn_coarse):
+            speed_button.setProperty("class", "pill-btn")
+            speed_button.setMinimumHeight(25)
 
         self.btn_fine.setCheckable(True)
         self.btn_med.setCheckable(True)
@@ -685,11 +733,12 @@ class AstroTelescopeWindow(QMainWindow):
         act_card = QFrame()
         act_card.setProperty("class", "card")
         act_layout = QVBoxLayout(act_card)
-        act_layout.setContentsMargins(12, 8, 12, 8)
-        act_layout.setSpacing(6)
+        act_layout.setContentsMargins(9, 6, 9, 6)
+        act_layout.setSpacing(4)
 
         lbl_cmd = QLabel("ALIGNMENT & MOUNT ACTIONS")
         lbl_cmd.setProperty("class", "section-header")
+        lbl_cmd.setObjectName("panelHeading")
         act_layout.addWidget(lbl_cmd)
 
         # Smarter Kinematics: Tracking Rate Selector Bar
@@ -716,7 +765,7 @@ class AstroTelescopeWindow(QMainWindow):
         act_layout.addLayout(rate_box)
 
         act_grid = QGridLayout()
-        act_grid.setSpacing(5)
+        act_grid.setSpacing(3)
 
         self.btn_sync = QPushButton("Sync Target")
         self.btn_sync.setProperty("class", "sync-btn")
@@ -750,6 +799,8 @@ class AstroTelescopeWindow(QMainWindow):
         self.btn_sky_tour.setToolTip("Interactive celestial tour of visible targets with 20x/30x/40x eyepiece recommendations (Ctrl+T)")
         self.btn_sky_tour.clicked.connect(self._open_sky_tour)
         act_grid.addWidget(self.btn_sky_tour, 3, 0, 1, 2)
+        for action_button in (self.btn_sync, self.btn_track, self.btn_home_alt, self.btn_home_az, btn_park, btn_zero, self.btn_sky_tour):
+            action_button.setMinimumHeight(27)
 
         act_layout.addLayout(act_grid)
 
@@ -763,7 +814,7 @@ class AstroTelescopeWindow(QMainWindow):
         self.btn_unwind = QPushButton("Unwind (0°)")
         btn_unwind = self.btn_unwind
         btn_unwind.setToolTip("Slew Azimuth to 0° True North to untangle cables")
-        btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; border-radius: 3px;" if not self.night_mode else "font-size: 10px; padding: 3px 8px; background: #260505; border: 1px solid #4D0A0A; color: #FFAAAA; border-radius: 3px;")
+        btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; border-radius: 9px;" if not self.night_mode else "font-size: 10px; padding: 3px 8px; background: #260505; border: 1px solid #4D0A0A; color: #FFAAAA; border-radius: 9px;")
         btn_unwind.clicked.connect(self._unwind_cable)
         cable_box.addWidget(btn_unwind)
 
@@ -774,12 +825,13 @@ class AstroTelescopeWindow(QMainWindow):
         foc_card = QFrame()
         foc_card.setProperty("class", "card")
         foc_layout = QVBoxLayout(foc_card)
-        foc_layout.setContentsMargins(12, 8, 12, 8)
-        foc_layout.setSpacing(6)
+        foc_layout.setContentsMargins(9, 6, 9, 6)
+        foc_layout.setSpacing(4)
 
         fhead = QHBoxLayout()
         lbl_f = QLabel("MOTORIZED FOCUS")
         lbl_f.setProperty("class", "section-header")
+        lbl_f.setObjectName("panelHeading")
         fhead.addWidget(lbl_f)
         fhead.addStretch()
 
@@ -789,7 +841,7 @@ class AstroTelescopeWindow(QMainWindow):
         foc_layout.addLayout(fhead)
 
         foc_btns = QGridLayout()
-        foc_btns.setSpacing(4)
+        foc_btns.setSpacing(3)
 
         btn_cin = QPushButton("Coarse In (<<)")
         btn_cin.clicked.connect(lambda: self._move_focus("coarse", True))
@@ -850,6 +902,8 @@ class AstroTelescopeWindow(QMainWindow):
         btn_zero_foc.setToolTip("Reset focus coordinate to 0")
         btn_zero_foc.clicked.connect(self._zero_focus)
         foc_auto_box.addWidget(btn_zero_foc)
+        for focus_button in (btn_cin, btn_fin, btn_fout, btn_cout, btn_nudge_in, btn_nudge_out, btn_goto_foc, btn_autofocus, btn_zero_foc):
+            focus_button.setMinimumHeight(26)
 
         foc_layout.addLayout(foc_auto_box)
         layout.addWidget(foc_card)
@@ -859,7 +913,8 @@ class AstroTelescopeWindow(QMainWindow):
     def _create_console_deck(self) -> QWidget:
         self.console_deck = QFrame()
         deck = self.console_deck
-        deck.setStyleSheet("background-color: #0E1015; border-top: 1px solid #252A34;" if not self.night_mode else "background-color: #050000; border-top: 1px solid #330808;")
+        deck.setProperty("class", "card")
+        deck.setObjectName("consoleDeck")
         layout = QVBoxLayout(deck)
         layout.setContentsMargins(14, 6, 14, 8)
         layout.setSpacing(4)
@@ -892,7 +947,7 @@ class AstroTelescopeWindow(QMainWindow):
 
         self.console_text = QTextEdit()
         self.console_text.setReadOnly(True)
-        self.console_text.setMaximumHeight(115)
+        self.console_text.setMaximumHeight(46)
         self.console_text.document().setMaximumBlockCount(2000)
         layout.addWidget(self.console_text)
 
@@ -1012,12 +1067,12 @@ class AstroTelescopeWindow(QMainWindow):
         if self.night_mode:
             self.btn_weather.setStyleSheet(
                 "background-color: #1A0303; border: 1px solid #4D0A0A; color: #FFAAAA; "
-                "font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;"
+                "font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 9px;"
             )
         else:
             self.btn_weather.setStyleSheet(
                 "background-color: #272C36; border: 1px solid #3B4352; color: #FFFFFF; "
-                "font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 3px;"
+                "font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 9px;"
             )
 
     def _update_connection_indicators(self) -> None:
@@ -1032,37 +1087,37 @@ class AstroTelescopeWindow(QMainWindow):
             if is_sim:
                 self.lbl_serial_status.setText("ARDUINO: SIMULATED")
                 if nm:
-                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #4A1020; padding: 4px 8px; border: 1px solid #801830; border-radius: 3px;")
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #4A1020; padding: 4px 8px; border: 1px solid #801830; border-radius: 9px;")
                 else:
-                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E4472; padding: 4px 8px; border: 1px solid #2B6496; border-radius: 3px;")
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E4472; padding: 4px 8px; border: 1px solid #2B6496; border-radius: 9px;")
             else:
                 self.lbl_serial_status.setText("ARDUINO: CONNECTED")
                 if nm:
-                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #5C0B0B; padding: 4px 8px; border: 1px solid #991414; border-radius: 3px;")
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #5C0B0B; padding: 4px 8px; border: 1px solid #991414; border-radius: 9px;")
                 else:
-                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
+                    self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 9px;")
         else:
             self.lbl_serial_status.setText("ARDUINO: DISCONNECTED")
             if nm:
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #AA2222; background-color: #1A0303; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 3px;")
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #AA2222; background-color: #1A0303; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 9px;")
             else:
-                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
+                self.lbl_serial_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 9px;")
 
         # Stellarium status badge
         stel_conn = bool(self.stellarium and self.stellarium.is_client_connected)
         if stel_conn:
             self.lbl_stellarium_status.setText("STELLARIUM: CONNECTED")
             if nm:
-                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #5C0B0B; padding: 4px 8px; border: 1px solid #991414; border-radius: 3px;")
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFAAAA; background-color: #5C0B0B; padding: 4px 8px; border: 1px solid #991414; border-radius: 9px;")
             else:
-                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 3px;")
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #1E7E34; padding: 4px 8px; border: 1px solid #28A745; border-radius: 9px;")
         else:
             port_num = self.config.get("stellarium_port", 10001)
             self.lbl_stellarium_status.setText(f"STELLARIUM: LISTENING [{port_num}]")
             if nm:
-                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #AA2222; background-color: #1A0303; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 3px;")
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #AA2222; background-color: #1A0303; padding: 4px 8px; border: 1px solid #4D0A0A; border-radius: 9px;")
             else:
-                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 3px;")
+                self.lbl_stellarium_status.setStyleSheet("font-size: 11px; font-weight: 700; color: #FFFFFF; background-color: #8A1B1B; padding: 4px 8px; border: 1px solid #B31D1D; border-radius: 9px;")
 
     def _apply_active_theme(self) -> None:
         nm = self.night_mode
@@ -1085,7 +1140,7 @@ class AstroTelescopeWindow(QMainWindow):
             self.btn_night_mode.setStyleSheet("background-color: #660A0A; border-color: #991414; color: #FFB3B3; font-weight: 700;" if nm else "")
 
         if hasattr(self, "safety_strip"):
-            self.safety_strip.setStyleSheet("background-color: #240505; border-bottom: 1px solid #4D0A0A;" if nm else "background-color: #381B1B; border-bottom: 1px solid #4D2626;")
+            self.safety_strip.setStyleSheet("background-color: #180004; border: 1px solid #5D1018; border-radius: 10px;" if nm else "background-color: #342512; border: 1px solid #72511F; border-radius: 10px;")
         if hasattr(self, "lbl_warn"):
             self.lbl_warn.setStyleSheet("font-size: 10px; font-weight: 700; color: #FF3333;" if nm else "font-size: 10px; font-weight: 700; color: #FFFFFF;")
         if hasattr(self, "chk_solar_filter"):
@@ -1108,11 +1163,11 @@ class AstroTelescopeWindow(QMainWindow):
         if hasattr(self, "lbl_cable_wrap"):
             self.lbl_cable_wrap.setStyleSheet("font-size: 11px; font-weight: 600; color: #FF4D4D;" if nm else "font-size: 11px; font-weight: 600; color: #88C0FF;")
         if hasattr(self, "btn_unwind"):
-            self.btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #260505; border: 1px solid #4D0A0A; color: #FFAAAA; border-radius: 3px;" if nm else "font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; color: #DCE2EB; border-radius: 3px;")
+            self.btn_unwind.setStyleSheet("font-size: 10px; padding: 3px 8px; background: #260505; border: 1px solid #4D0A0A; color: #FFAAAA; border-radius: 9px;" if nm else "font-size: 10px; padding: 3px 8px; background: #1A2330; border: 1px solid #2B3D52; color: #DCE2EB; border-radius: 9px;")
         if hasattr(self, "lbl_foc_pos"):
             self.lbl_foc_pos.setStyleSheet("font-family: 'Consolas'; font-size: 11px; color: #FF4D4D; font-weight: 600;" if nm else "font-family: 'Consolas'; font-size: 11px; color: #88B0D8; font-weight: 600;")
         if hasattr(self, "console_deck"):
-            self.console_deck.setStyleSheet("background-color: #050000; border-top: 1px solid #330808;" if nm else "background-color: #0E1015; border-top: 1px solid #252A34;")
+            self.console_deck.setStyleSheet("")
 
         if hasattr(self, "lbl_p"):
             self.lbl_p.setStyleSheet("font-size: 11px; color: #AA2222;" if nm else "font-size: 11px; color: #8892A0;")
