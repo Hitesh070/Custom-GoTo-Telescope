@@ -1,10 +1,6 @@
 # Custom GoTo Telescope Mount v4.0
 
 <p align="center">
-  <img src="assets/black_hole_icon.png" width="128" height="128" alt="Custom GoTo Icon" />
-</p>
-
-<p align="center">
   <b>Professional 3-Axis Motorized Alt-Azimuth GoTo Telescope Controller & Stellarium Bridge</b><br>
   <i>Engineered for 60mm F/2.8 refractors, Arduino Uno, 28BYJ-48 steppers, and ULN2003 drivers.</i>
 </p>
