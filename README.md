@@ -17,19 +17,46 @@
 
 ---
 
+## Table of Contents
+- [Architecture Overview](#architecture-overview)
+- [Key Features in Release v4.0](#key-features-in-release-v40)
+  - [Modern Windows 11 Desktop Experience](#modern-windows-11-desktop-experience)
+  - [Precision Astrometry & Kinematics](#precision-astrometry--kinematics)
+  - [Hardware Diagnostics](#hardware-diagnostics)
+  - [Cross-Platform Next.js Web Controller (`web/`)](#cross-platform-nextjs-web-controller-web)
+- [Repository Structure](#repository-structure)
+- [Hardware & Electronics](#hardware--electronics)
+  - [Arduino Uno Pinout](#arduino-uno-pinout)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Getting Started](#getting-started)
+  - [1. Upload Arduino Firmware](#1-upload-arduino-firmware)
+  - [2. Launch the Desktop Application](#2-launch-the-desktop-application)
+  - [3. Stellarium Setup](#3-stellarium-setup)
+  - [4. Mobile & Web Controller (Next.js)](#4-mobile--web-controller-nextjs)
+- [Building Standalone Windows Executable (.exe)](#building-standalone-windows-executable-exe)
+- [Automated Verification Suite](#automated-verification-suite)
+- [Author & License](#author--license)
+
+---
+
 ## Architecture Overview
 
 ```mermaid
 flowchart TD
-    subgraph PC["Host Desktop (Windows 10 / 11)"]
+    subgraph PC["Host Desktop / Controller (Windows 10 / 11)"]
         S["Stellarium Astronomy Software"]
-        subgraph BridgeApp["Custom GoTo v4.0 Desktop Application (PyQt6)"]
+        subgraph BridgeApp["Custom GoTo v4.0 Controller & Kinematics Engine"]
             ST_SRV["Stellarium TCP Server (Port 10001)"]
             HTTP_CLI["Stellarium HTTP Follower (Port 8090)"]
             WX_SVC["Live Open-Meteo Weather Telemetry"]
             CORE["AstroTelescopeCore Kinematics Engine\n(Astrometry, Meeus Ephemeris, Kinematics)"]
-            GUI["Modern Windows 11 Fluent Interface\n(Vector Radar, Sky Tour, V-Curve Autofocus, Pure-Red Night Vision)"]
+            GUI["PyQt6 Desktop Interface\n(Polar Radar, Sky Tour, V-Curve Autofocus, Night Vision)"]
+            WEB_BRIDGE["Web Bridge Server (src/web_bridge.py)\n(Embedded HTTP REST & Telemetry Server)"]
         end
+    end
+
+    subgraph WebClient["Mobile & Field Tablet Client (web/)"]
+        NEXT["Next.js 15 Web Application\n(Touch Jogger, Slew Controller, Pure-Red Night Vision)"]
     end
 
     subgraph Hardware["Mount Electronics"]
@@ -49,6 +76,8 @@ flowchart TD
     ST_SRV <--> CORE
     HTTP_CLI <--> CORE
     CORE <--> GUI
+    CORE <--> WEB_BRIDGE
+    WEB_BRIDGE <-->|"HTTP / REST API (Port 8765)"| NEXT
     CORE <-->|"USB Serial (115200 baud)"| UNO
     UNO --> ULN_AZ --> M_AZ
     UNO --> ULN_ALT --> M_ALT
@@ -80,13 +109,19 @@ flowchart TD
 * **Bidirectional Serial Monitor:** Live packet inspector with ASCII/HEX modes and custom command transmitter.
 * **Meteorological Telemetry:** Live Open-Meteo cloud cover %, temperature, humidity, wind speed, and seeing transparency.
 
+### Cross-Platform Next.js Web Controller (`web/`)
+* **Zero-Install Mobile Interface:** Access full mount telemetry and controls from any smartphone, tablet, or secondary machine on the local network.
+* **Touch-Optimized Field Controls:** Virtual touch D-Pad and jog wheel designed for dark-sky conditions with tactile button targets and safety hold-to-jog.
+* **Embedded Telemetry Bridge:** Lightweight REST & telemetry server (`src/web_bridge.py`) running in a background daemon with zero third-party framework overhead.
+* **Dual Night Vision Modes:** Obsidian Dark and OLED Pure-Red themes matching the desktop experience to preserve retinal dark adaptation.
+
 ---
 
 ## Repository Structure
 
 ```text
 Custom-GoTo-Telescope/
-├── assets/                     # Application branding & Black Hole icons
+├── assets/                     # Application branding & UI assets
 │   ├── black_hole_icon.ico
 │   └── black_hole_icon.png
 ├── docs/                       # Comprehensive documentation & build guide
@@ -97,6 +132,7 @@ Custom-GoTo-Telescope/
 ├── scripts/                    # Utility & icon generation scripts
 │   └── generate_icon.py
 ├── src/                        # Modular application codebase (v4.0)
+│   ├── web_bridge.py           # Embedded HTTP/REST telemetry server for web client
 │   ├── core/                   # Astrometry, catalog & weather services
 │   │   ├── astrometry.py       # Ephemeris, coordinates & J2000 precession
 │   │   ├── catalog.py          # Curated Tonight's Best celestial database
@@ -107,11 +143,15 @@ Custom-GoTo-Telescope/
 │       ├── main_window.py      # Primary window shell & 20Hz telemetry HUD
 │       ├── widgets/            # Polar sky radar & parabolic focus curve
 │       └── dialogs/            # GoTo, Tour, AutoFocus, Serial Monitor, Settings, Help
-├── tests/                      # Automated unit & integration verification suite
+├── tests/                      # Automated unit & integration verification suite (23 passing)
 │   ├── test_serial_monitor_and_optics.py
 │   ├── test_tonight_best_alignment.py
 │   ├── test_global_shortcuts.py
 │   └── test_verification_suite.py
+├── web/                        # Next.js 15 & Tailwind CSS mobile web controller
+│   ├── src/                    # Web client components, state & touch controls
+│   ├── package.json            # Web dependencies (Next.js 15, React 19, Tailwind CSS)
+│   └── tailwind.config.ts      # Night-vision styling tokens
 ├── .gitignore                  # Git ignore rules
 ├── LICENSE                     # MIT License File
 ├── build_exe.py                # Standalone Windows PyInstaller packaging script
@@ -193,6 +233,18 @@ python telescope_ui_qt.py --simulate
    - Port: `10001`
 3. Click **Connect**. The telescope reticle will appear on screen.
 4. Select any celestial object and press **Ctrl + 1** to slew.
+
+### 4. Mobile & Web Controller (Next.js)
+To control the mount wirelessly from a smartphone, tablet, or secondary computer:
+1. In `telescope_config.json`, verify the web bridge is enabled (`"web_bridge_enabled": true`).
+2. Launch the Next.js web application:
+   ```bash
+   cd web
+   npm install
+   npm run dev
+   ```
+3. Open `http://localhost:3000` (or `http://<your-pc-ip>:3000` from any device on your local Wi-Fi).
+4. Connect and steer the mount using touch controls, virtual D-Pad, or setpoint GoTo.
 
 ---
 
