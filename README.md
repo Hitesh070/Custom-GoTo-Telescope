@@ -115,19 +115,19 @@ flowchart TD
             ST_SRV["Stellarium TCP Server (Port 10001)"]
             HTTP_CLI["Stellarium HTTP Follower (Port 8090)"]
             WX_SVC["Live Open-Meteo Weather Telemetry"]
-            CORE["AstroTelescopeCore Kinematics Engine\n(Astrometry, Meeus Ephemeris, Kinematics)"]
-            GUI["PyQt6 Desktop Interface\n(Polar Radar, Sky Tour, V-Curve Autofocus, Night Vision)"]
-            WEB_BRIDGE["Web Bridge Server (src/web_bridge.py)\n(Embedded HTTP REST & Telemetry Server)"]
+            CORE["AstroTelescopeCore Kinematics Engine<br/>(Astrometry, Meeus Ephemeris, Kinematics)"]
+            GUI["PyQt6 Desktop Interface<br/>(Polar Radar, Sky Tour, V-Curve Autofocus, Night Vision)"]
+            WEB_BRIDGE["Web Bridge Server (src/web_bridge.py)<br/>(Embedded HTTP REST & Telemetry Server)"]
         end
     end
 
     subgraph WebClient ["Mobile & Field Tablet Client (web/)"]
-        NEXT["Next.js 15 Web Application\n(Touch Jogger, Slew Controller, Pure-Red Night Vision)"]
+        NEXT["Next.js 15 Web Application<br/>(Touch Jogger, Slew Controller, Pure-Red Night Vision)"]
     end
 
     subgraph Hardware ["Mount Electronics & Actuators"]
         direction TB
-        UNO["Arduino Uno (ATmega328P)\n[firmware/telescope_firmware/]"]
+        UNO["Arduino Uno (ATmega328P)<br/>(firmware/telescope_firmware/)"]
         ULN_AZ["ULN2003 Driver (Azimuth)"]
         ULN_ALT["ULN2003 Driver (Altitude)"]
         ULN_FOC["ULN2003 Driver (Focuser)"]
@@ -328,25 +328,26 @@ All shortcuts are monitored via an application-level event filter and function a
 
 ```mermaid
 flowchart TD
-    UserTarget([User Selects Target: Desktop / Stellarium / Mobile]) --> CheckSafety{Is Sun Angle < 15°?}
+    UserTarget(["User Selects Target: Desktop / Stellarium / Mobile"]) --> CheckSafety{"Is Sun Angle &lt; 15°?"}
     
-    CheckSafety -- Yes (Unsafe) --> CheckFilter{Physical Solar Filter Confirmed?}
-    CheckFilter -- No --> AbortSlew[ABORT SLEW:\nSolar Keep-Out Interlock Triggered]
-    CheckFilter -- Yes --> CalcCoords[Proceed with Caution]
+    CheckSafety -- Yes (Unsafe) --> CheckFilter{"Physical Solar Filter Confirmed?"}
+    CheckFilter -- No --> AbortSlew["ABORT SLEW:<br/>Solar Keep-Out Interlock Triggered"]
+    CheckFilter -- Yes --> ProceedCautious["Proceed with Caution"]
     
-    CheckSafety -- No (Safe) --> CalcCoords[Compute J2000 to Local Topocentric Alt/Az]
+    CheckSafety -- No (Safe) --> CalcCoords["Compute J2000 to Local Topocentric Alt/Az"]
+    ProceedCautious --> CalcCoords
     
-    CalcCoords --> Kinematics[Compute Motor Steps via Gear Ratio:\nSteps = Angle * 4075.772 / 360]
-    Kinematics --> CableCheck{Cable Turns > 1.0?}
+    CalcCoords --> Kinematics["Compute Motor Steps via Gear Ratio:<br/>Steps = Angle * 4075.772 / 360"]
+    Kinematics --> CableCheck{"Cable Turns &gt; 1.0?"}
     
-    CableCheck -- Yes --> UnwindAlert[Prompt Cable Unwind Sequence]
-    CableCheck -- No --> StreamPacket[Transmit Serial Slew Packet to Arduino Uno]
+    CableCheck -- Yes --> UnwindAlert["Prompt Cable Unwind Sequence"]
+    CableCheck -- No --> StreamPacket["Transmit Serial Slew Packet to Arduino Uno"]
     
-    StreamPacket --> AccelStepper[AccelStepper Acceleration Profile]
-    AccelStepper --> DriveMotors[Energize ULN2003 Coils -> 28BYJ-48 Steppers]
+    StreamPacket --> AccelStepper["AccelStepper Acceleration Profile"]
+    AccelStepper --> DriveMotors["Energize ULN2003 Coils -&gt; 28BYJ-48 Steppers"]
     
-    DriveMotors --> TrackingLoop[Engage Sidereal Tracking: 15.041 arcsec/sec]
-    TrackingLoop --> TelemetryStream[Stream 20Hz Telemetry to Desktop & Web Bridge]
+    DriveMotors --> TrackingLoop["Engage Sidereal Tracking: 15.041 arcsec/sec"]
+    TrackingLoop --> TelemetryStream["Stream 20Hz Telemetry to Desktop &amp; Web Bridge"]
 ```
 
 ---
